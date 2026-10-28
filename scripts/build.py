@@ -880,6 +880,87 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 8: small functions only reachable through pointers in data.
+#
+# Leaf functions have no .pdata entry, and the ones the game only reaches
+# through a callback table (not a vtable) were never discovered; the first call
+# ended with "Call to invalid or unregistered function". For the base game they
+# are listed by hand in harmonyrecomp_config.toml / harmonyrecomp_dll*.toml;
+# the ~100 DLC modules need the same, e.g. 0x83CA1488 in dllshotFCvkshot.dll
+# (crash right after the splash screen with all DLC installed). DLL modules
+# now get the same scan the hand-written lists came from: a 32-bit word in a
+# data section that points into code, right after a return, branch or padding,
+# not inside a function known from .pdata, with a blr/bctr/b within 64
+# instructions, is registered as a function.
+_POINTER_SCAN = """\
+  // HarmonyRecomp: functions referenced only from data (callback tables).
+  if (ctx.isDllModule()) {
+    std::vector<std::pair<uint32_t, uint32_t>> pdataRanges(ctx.scan.pdataSizes.begin(),
+                                                           ctx.scan.pdataSizes.end());
+    std::sort(pdataRanges.begin(), pdataRanges.end());
+    auto insidePdataFunction = [&](uint32_t addr) {
+      auto it = std::upper_bound(pdataRanges.begin(), pdataRanges.end(),
+                                 std::make_pair(addr, UINT32_MAX));
+      if (it == pdataRanges.begin()) return false;
+      --it;
+      return addr > it->first && addr < it->first + it->second;
+    };
+    auto codeWord = [&](uint32_t addr, uint32_t* out) {
+      const uint8_t* p = binary.isExecutable(addr) ? binary.translate(addr) : nullptr;
+      if (!p) return false;
+      *out = load_and_swap<uint32_t>(p);
+      return true;
+    };
+    auto endsFlow = [](uint32_t insn) {
+      return insn == 0x4E800020u || insn == 0x4E800420u ||   // blr, bctr
+             ((insn >> 26) == 18 && (insn & 3) == 0);        // b
+    };
+    size_t added = 0;
+    for (const auto& section : binary.sections()) {
+      if (section.executable) continue;
+      for (uint32_t off = 0; off + 4 <= section.size; off += 4) {
+        uint32_t target = load_and_swap<uint32_t>(section.data + off);
+        uint32_t insn = 0;
+        if ((target & 3) || !codeWord(target, &insn) || insn == 0) continue;
+        if (graph.isEntryPoint(target) || binary.isInImportExportRange(target)) continue;
+        if (insidePdataFunction(target)) continue;
+        uint32_t prev = 0;
+        if (codeWord(target - 4, &prev) && prev != 0 && !endsFlow(prev)) continue;
+        bool ends = false;
+        for (uint32_t i = 0; i < 64; ++i) {
+          uint32_t w = 0;
+          if (!codeWord(target + i * 4, &w) || w == 0) break;
+          if (endsFlow(w)) { ends = true; break; }
+        }
+        if (!ends) continue;
+        graph.addFunction(target, 4, FunctionAuthority::DISCOVERED, true);
+        ++added;
+      }
+    }
+    if (added > 0) {
+      REXCODEGEN_DEBUG("Analyze: data pointer scan found {} functions", added);
+      auto knownFunctions = buildKnownFunctions(graph);
+      discoverPendingFunctions(ctx, knownFunctions);
+    }
+  }
+
+"""
+SDK_PATCHES += [
+    (
+        "src/codegen/phase_discover.cpp",
+        "#include <array>\n#include <bitset>\n",
+        "#include <algorithm>\n#include <array>\n#include <bitset>\n#include <climits>\n"
+        "#include <cstdint>\n#include <vector>\n",
+    ),
+    (
+        "src/codegen/phase_discover.cpp",
+        '  REXCODEGEN_TRACE("Analyze: {} total functions after vtable scan", graph.functionCount());\n',
+        _POINTER_SCAN +
+        '  REXCODEGEN_TRACE("Analyze: {} total functions after vtable scan", graph.functionCount());\n',
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
