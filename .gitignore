@@ -11,6 +11,11 @@ harmonyrecomp_manifest.local.toml
 out/
 thirdparty/
 
+# Installer and release packaging output
+dist/
+installer/bin/
+installer/obj/
+
 # Logs, archives and editor / Python leftovers
 build.log
 *.log

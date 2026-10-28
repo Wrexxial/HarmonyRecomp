@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HarmonyRecomp-Setup.exe: downloads the release package and the compiler
+    toolchain, builds the game from the player's own game file and installs it.
+    .NET Framework 4.8 is part of every Windows 10 (1903+) and Windows 11.
+    Release builds pass -p:ReleaseTag=<tag> -p:RepoSlug=<owner/repo>.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>HarmonyRecomp-Setup</AssemblyName>
+    <RootNamespace>HarmonyRecompSetup</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon></ApplicationIcon>
+    <Product>HarmonyRecomp Setup</Product>
+    <Copyright>HarmonyRecomp contributors, BSD 3-Clause License</Copyright>
+    <ReleaseTag Condition="'$(ReleaseTag)' == ''">dev</ReleaseTag>
+    <RepoSlug Condition="'$(RepoSlug)' == ''">Wrexxial/HarmonyRecomp</RepoSlug>
+    <InformationalVersion>$(ReleaseTag)</InformationalVersion>
+    <DebugType>embedded</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ReleaseTag</_Parameter1>
+      <_Parameter2>$(ReleaseTag)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>RepoSlug</_Parameter1>
+      <_Parameter2>$(RepoSlug)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -17,6 +17,15 @@ Usage:
   python scripts/build.py --codegen-only  # stop after step 4
   python scripts/build.py --force-codegen # rerun codegen even if output exists
 
+Used by the installer (HarmonyRecomp-Setup.exe) and the release workflow:
+  --game FILE        game package to use instead of the file in game/
+  --dlc-dir DIR      DLC packages to use instead of dlc/
+  --sdk-dir DIR      prebuilt SDK (install folder from a release) instead of
+                     cloning and building ../rexglue-sdk
+  --sdk-only         clone, patch, build and install the SDK, then stop
+  --install-to DIR   after building, put the playable game into DIR
+  --jobs N           parallel compile jobs (default: all CPU cores)
+
 Requirements (Windows): scoop install llvm cmake ninja git python
 """
 
@@ -57,6 +66,11 @@ def run(args, cwd=None):
         sys.exit(f"error: command failed with exit code {result.returncode}")
 
 
+def progress(stage: str) -> None:
+    """Machine-readable stage marker for the installer (one line, flushed)."""
+    print(f"##stage {stage}", flush=True)
+
+
 def git(*args) -> list:
     """git command that works on drives without file ownership (exFAT/FAT32).
 
@@ -79,8 +93,9 @@ def platform_id() -> str:
     sys.exit(f"error: unsupported architecture {arch}")
 
 
-def check_tools() -> None:
-    missing = [t for t in ("cmake", "ninja", "git", "clang++") if shutil.which(t) is None]
+def check_tools(need_git: bool = True) -> None:
+    tools = ["cmake", "ninja", "clang++"] + (["git"] if need_git else [])
+    missing = [t for t in tools if shutil.which(t) is None]
     if missing:
         sys.exit(
             "error: missing tool(s): " + ", ".join(missing) +
@@ -101,16 +116,28 @@ def read_pin() -> tuple[str, str]:
     return url, commit
 
 
-def step_extract() -> None:
+def step_extract(game: Path | None = None) -> None:
     if (ROOT / "assets" / "default.xex").exists():
         print("[1/5] assets/default.xex present, skipping extraction")
         return
     print("[1/5] Extracting game package")
-    packages = [p for p in (ROOT / "game").glob("*") if p.is_file()]
-    if len(packages) != 1:
-        sys.exit("error: put exactly one XBLA package file (the 'LIVE' file) into game/")
-    run([sys.executable, ROOT / "scripts" / "extract_game.py", packages[0],
-         "--assets", ROOT / "assets"])
+    progress("extract")
+    if game is None:
+        packages = [p for p in (ROOT / "game").glob("*") if p.is_file()]
+        if len(packages) != 1:
+            sys.exit("error: put exactly one XBLA package file (the 'LIVE' file) into game/")
+        game = packages[0]
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import extract_game  # noqa: E402  (scripts/ is not a package)
+    try:
+        package = extract_game.Package(game)
+    except (OSError, RuntimeError) as err:
+        sys.exit(f"error: {game} is not a usable game package: {err}")
+    if package.title_id != TITLE_ID or package.content_type != extract_game.CONTENT_TYPE_ARCADE:
+        sys.exit(f"error: {game.name} is not Castlevania: Harmony of Despair "
+                 f"(title {package.title_id:08X}, content type {package.content_type:08X}); "
+                 f"use the file from 58410A7A/000D0000/")
+    extract_game.extract(game, ROOT / "assets", require_xex=True)
 
 
 def active_manifest() -> Path:
@@ -126,7 +153,7 @@ def base_guest_paths() -> set[str]:
     return paths
 
 
-def step_dlc() -> None:
+def step_dlc(dlc_dir: Path | None = None) -> None:
     """Unpack DLC packages from dlc/ and add their player DLLs to codegen.
 
     The game loads DLC characters with XexLoadImage from the mounted package
@@ -135,7 +162,8 @@ def step_dlc() -> None:
     the path inside its package. The packages themselves are installed into the
     runtime's content folder when the game starts (see src/dlc.cpp).
     """
-    packages = sorted(p for p in DLC_DIR.glob("*")
+    dlc_dir = dlc_dir or DLC_DIR
+    packages = sorted(p for p in dlc_dir.glob("*")
                       if p.is_file() and not p.name.startswith(".") and p.suffix.lower() != ".txt")
     if not packages:
         if LOCAL_MANIFEST.exists():
@@ -860,17 +888,21 @@ def step_codegen(tool: Path, force: bool) -> None:
         print("[4/5] Codegen config or SDK changed, running codegen again (about 2 minutes)")
     else:
         print("[4/5] Running codegen (about 2 minutes)")
+    progress("codegen")
     run([tool, "codegen", active_manifest()], cwd=ROOT)
     check_codegen_output()
     CODEGEN_STAMP.write_text(current + "\n")
 
 
-def step_build_game(pid: str, config: str) -> None:
+def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Path:
     preset = f"{pid}-{config.lower()}"
     print(f"[5/5] Building the game ({preset})")
-    prefix = sdk_install_dir(pid)
+    progress("compile")
     run(["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}"], cwd=ROOT)
-    run(["cmake", "--build", f"out/build/{preset}"], cwd=ROOT)
+    build = ["cmake", "--build", f"out/build/{preset}"]
+    if jobs:
+        build += ["--parallel", str(jobs)]
+    run(build, cwd=ROOT)
     out_dir = ROOT / "out" / "build" / preset
     runtime_cfg = out_dir / "harmonyrecomp.toml"
     if not runtime_cfg.exists():
@@ -879,6 +911,37 @@ def step_build_game(pid: str, config: str) -> None:
         shutil.copy2(ROOT / "harmonyrecomp.toml", runtime_cfg)
         print(f"      wrote {runtime_cfg}")
     print(f"\nDone. Output is in {out_dir}")
+    return out_dir
+
+
+RUNTIME_FILES = ("*.exe", "*.dll", "*.map")
+
+
+def step_install(out_dir: Path, target: Path, dlc_dir: Path | None) -> None:
+    """Put the playable game into target: executable, modules, settings, the
+    extracted game data and the DLC packages (installed at first start)."""
+    print(f"[6/6] Installing into {target}")
+    progress("install")
+    target.mkdir(parents=True, exist_ok=True)
+    for pattern in RUNTIME_FILES:
+        for src in out_dir.glob(pattern):
+            shutil.copy2(src, target / src.name)
+    settings = target / "harmonyrecomp.toml"
+    if not settings.exists():  # keep the player's settings on updates
+        shutil.copy2(out_dir / "harmonyrecomp.toml", settings)
+    assets = ROOT / "assets"
+    target_assets = target / "assets"
+    if assets.resolve() != target_assets.resolve():
+        if target_assets.exists():
+            shutil.rmtree(target_assets)
+        shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
+    dlc_dir = dlc_dir or DLC_DIR
+    packages = [p for p in dlc_dir.glob("*") if p.is_file()] if dlc_dir.is_dir() else []
+    if packages:
+        (target / "dlc").mkdir(exist_ok=True)
+        for package in packages:
+            shutil.copy2(package, target / "dlc" / package.name)
+    print(f"      done: start {target / 'harmonyrecomp.exe'}")
 
 
 def main() -> int:
@@ -887,20 +950,47 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="debug instead of release build")
     parser.add_argument("--codegen-only", action="store_true", help="stop after codegen")
     parser.add_argument("--force-codegen", action="store_true", help="rerun codegen")
+    parser.add_argument("--game", type=Path, help="game package (default: the file in game/)")
+    parser.add_argument("--dlc-dir", type=Path, help="folder with DLC packages (default: dlc/)")
+    parser.add_argument("--sdk-dir", type=Path,
+                        help="prebuilt SDK install folder instead of building ../rexglue-sdk")
+    parser.add_argument("--sdk-only", action="store_true", help="build the SDK, then stop")
+    parser.add_argument("--install-to", type=Path, help="put the playable game into this folder")
+    parser.add_argument("--jobs", type=int, help="parallel compile jobs")
     args = parser.parse_args()
 
-    check_tools()
     pid = platform_id()
     config = "Debug" if args.debug else "Release"
 
-    step_extract()
-    step_dlc()
-    step_clone_sdk()
-    tool = step_build_sdk(pid, config)
+    if args.sdk_only:
+        check_tools(need_git=True)
+        progress("sdk")
+        step_clone_sdk()
+        step_build_sdk(pid, config)
+        return 0
+
+    step_extract(args.game)  # checks the game file first: the clearest error for a wrong file
+    step_dlc(args.dlc_dir)
+    check_tools(need_git=args.sdk_dir is None)
+    if args.sdk_dir:
+        prefix = args.sdk_dir.resolve()
+        tool = next((p for p in prefix.rglob("rexglue.exe" if platform.system() == "Windows"
+                                             else "rexglue") if p.is_file()), None)
+        if tool is None:
+            sys.exit(f"error: no rexglue tool in {prefix}")
+        print(f"[2/5] Using prebuilt SDK {prefix}")
+        print("[3/5] (prebuilt SDK, nothing to build)")
+    else:
+        step_clone_sdk()
+        tool = step_build_sdk(pid, config)
+        prefix = sdk_install_dir(pid)
     step_codegen(tool, args.force_codegen)
     if args.codegen_only:
         return 0
-    step_build_game(pid, config)
+    out_dir = step_build_game(pid, config, prefix, args.jobs)
+    if args.install_to:
+        step_install(out_dir, args.install_to.resolve(), args.dlc_dir)
+    progress("done")
     return 0
 
 

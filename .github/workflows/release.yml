@@ -1,0 +1,227 @@
+# Builds the downloads of a release: the installer (HarmonyRecomp-Setup.exe),
+# the prebuilt SDK package and the compiler toolchain. Nothing of the game is
+# involved: the installer builds the game on the player's PC from their own
+# game file.
+#
+# - Publishing a GitHub release builds everything and attaches it to the release.
+# - "Run workflow" (Actions tab) builds and tests without a release.
+# - Pushes to the "installer" branch do the same (used while developing the setup).
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:
+    branches: [installer]
+
+permissions:
+  contents: write
+
+env:
+  LLVM_VERSION: "20.1.8"
+  CMAKE_VERSION: "3.31.6"
+  NINJA_VERSION: "1.12.1"
+  PYTHON_EMBED_VERSION: "3.12.10"
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ci-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+          mkdir -p "$RUNNER_TEMP/logs"
+
+      - name: Download LLVM, CMake, Ninja, embeddable Python
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang+llvm-${LLVM_VERSION}-x86_64-pc-windows-msvc.tar.xz"
+          tar -xf llvm.tar.xz
+          mv "clang+llvm-${LLVM_VERSION}-x86_64-pc-windows-msvc" llvm
+          curl -fsSL -o cmake.zip "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-windows-x86_64.zip"
+          unzip -q cmake.zip && mv "cmake-${CMAKE_VERSION}-windows-x86_64" cmake
+          curl -fsSL -o ninja.zip "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-win.zip"
+          mkdir ninja && unzip -q ninja.zip -d ninja
+          curl -fsSL -o python-embed.zip "https://www.python.org/ftp/python/${PYTHON_EMBED_VERSION}/python-${PYTHON_EMBED_VERSION}-embed-amd64.zip"
+          # The same tools the installer ships are used for the SDK build.
+          echo "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/cmake/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/ninja" >> "$GITHUB_PATH"
+
+      - name: SDK cache key
+        id: sdkkey
+        run: |
+          key=$(python -c "import runpy; m = runpy.run_path('scripts/build.py'); print(m['sdk_patch_hash']())")
+          echo "key=sdk-win-amd64-llvm${LLVM_VERSION}-$(cat sdk-pin.txt | sha256sum | cut -c1-12)-${key}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore prebuilt SDK
+        id: sdkcache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../rexglue-sdk/out/install/win-amd64
+          key: ${{ steps.sdkkey.outputs.key }}
+
+      - name: Build the ReXGlue SDK
+        if: steps.sdkcache.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          clang++ --version | tee "$RUNNER_TEMP/logs/clang-version.log"
+          python -u scripts/build.py --sdk-only 2>&1 | tee "$RUNNER_TEMP/logs/sdk-build.log"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          SDK="$(cygpath -w "$(cd .. && pwd)/rexglue-sdk/out/install/win-amd64")"
+          ls "$SDK" | tee "$RUNNER_TEMP/logs/sdk-install.log"
+          python scripts/package_release.py --out dist --sdk "$SDK" \
+            --python-embed "$RUNNER_TEMP/python-embed.zip" \
+            --llvm "$RUNNER_TEMP/llvm" --cmake "$RUNNER_TEMP/cmake" --ninja "$RUNNER_TEMP/ninja/ninja.exe" \
+            2>&1 | tee "$RUNNER_TEMP/logs/package.log"
+
+      - name: Build the installer
+        run: |
+          set -o pipefail
+          dotnet build installer/HarmonyRecompSetup.csproj -c Release \
+            -p:ReleaseTag="${{ steps.tag.outputs.tag }}" -p:RepoSlug="${{ github.repository }}" \
+            2>&1 | tee "$RUNNER_TEMP/logs/installer-build.log"
+          cp installer/bin/Release/HarmonyRecomp-Setup.exe dist/
+          ls -la dist | tee -a "$RUNNER_TEMP/logs/package.log"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/* --clobber
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-build
+          path: ${{ runner.temp }}/logs/
+
+  # A fresh Windows machine: unpack the downloads like the installer does,
+  # fetch Microsoft's C++ components with the portable downloader and compile
+  # the project's own sources against the prebuilt SDK.
+  smoke-test:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+
+      - name: Unpack like the installer
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/logs" setup
+          cd setup
+          unzip -q ../dist/harmonyrecomp-package.zip -d package
+          unzip -q ../dist/harmonyrecomp-toolchain.zip -d toolchain
+          ls package package/sdk toolchain toolchain/llvm/bin | tee "$RUNNER_TEMP/logs/layout.log"
+
+      - name: Installer program starts and checks game files
+        run: |
+          set -uo pipefail
+          printf 'NOTAPACKAGE' > fake.bin
+          ./dist/HarmonyRecomp-Setup.exe --check-game fake.bin; code=$?
+          echo "check-game exit code $code (expected 1)" | tee "$RUNNER_TEMP/logs/installer-check.log"
+          test "$code" = "1"
+
+      - name: build.py rejects a wrong game file
+        run: |
+          set -uo pipefail
+          cd setup/package/src
+          ../python/python.exe scripts/build.py --game ../../../fake.bin --sdk-dir ../sdk 2>&1 | tee "$RUNNER_TEMP/logs/buildpy-check.log"
+          grep -q "not a usable game package" "$RUNNER_TEMP/logs/buildpy-check.log"
+
+      - name: Portable Microsoft C++ components
+        run: |
+          set -o pipefail
+          cd setup/package/src
+          ../python/python.exe scripts/portable_msvc.py --license 2>&1 | tee "$RUNNER_TEMP/logs/msvc.log"
+          ../python/python.exe -u scripts/portable_msvc.py --accept-license "$GITHUB_WORKSPACE/setup/msvc" 2>&1 \
+            | grep -v '^##download' | tee -a "$RUNNER_TEMP/logs/msvc.log"
+          cat "$GITHUB_WORKSPACE/setup/msvc/env.json" | tee -a "$RUNNER_TEMP/logs/msvc.log"
+
+      - name: Configure and compile the project sources with the portable tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = "$env:GITHUB_WORKSPACE\setup"
+          $env:PATH = "$root\toolchain\llvm\bin;$root\toolchain\cmake\bin;$root\toolchain\ninja;$root\package\python;$env:PATH"
+          $paths = Get-Content "$root\msvc\env.json" | ConvertFrom-Json
+          $env:INCLUDE = $paths.INCLUDE
+          $env:LIB = $paths.LIB
+          Set-Location "$root\package\src"
+          $log = "$env:RUNNER_TEMP\logs\compile.log"
+          & clang++ --version *>&1 | Tee-Object -FilePath $log
+          & cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$root\package\sdk" *>&1 | Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+          # Without the game there is no generated code, so build the objects of src/ only.
+          $objects = & ninja -C out/build/win-amd64-release -t targets all | ForEach-Object { ($_ -split ':')[0] } |
+                     Where-Object { $_ -match '^CMakeFiles/harmonyrecomp\.dir/src/.*\.obj$' }
+          "objects: $($objects.Count)" | Tee-Object -FilePath $log -Append
+          & ninja -C out/build/win-amd64-release @objects *>&1 | Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) { throw "compiling the project sources failed" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-smoke
+          path: ${{ runner.temp }}/logs/
+
+  # Publishes the logs of both jobs to the branch "ci-status", so they can be
+  # read with plain git (git fetch origin ci-status).
+  report:
+    needs: [build, smoke-test]
+    if: always() && github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: logs
+          pattern: logs-*
+      - name: Push to ci-status
+        run: |
+          set -euo pipefail
+          mkdir status && cd status
+          git init -q -b ci-status
+          cp -r ../logs/. .
+          {
+            echo "commit: ${{ github.sha }}"
+            echo "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "build: ${{ needs.build.result }}"
+            echo "smoke-test: ${{ needs.smoke-test.result }}"
+          } > RESULT.txt
+          cat RESULT.txt
+          git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "CI status for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-status
