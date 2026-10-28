@@ -149,7 +149,8 @@ jobs:
 
       - name: Installer program starts and checks game files
         run: |
-          set -uo pipefail
+          # GitHub runs bash with -e; the expected failure must not end the step.
+          set +e -uo pipefail
           printf 'NOTAPACKAGE' > fake.bin
           ./dist/HarmonyRecomp-Setup.exe --check-game fake.bin; code=$?
           echo "check-game exit code $code (expected 1)" | tee "$RUNNER_TEMP/logs/installer-check.log"
@@ -157,10 +158,10 @@ jobs:
 
       - name: build.py rejects a wrong game file
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           cd setup/package/src
           ../python/python.exe scripts/build.py --game ../../../fake.bin --sdk-dir ../sdk 2>&1 | tee "$RUNNER_TEMP/logs/buildpy-check.log"
-          grep -q "not a usable game package" "$RUNNER_TEMP/logs/buildpy-check.log"
+          grep -q "not a usable game package" "$RUNNER_TEMP/logs/buildpy-check.log" || exit 1
 
       - name: Portable Microsoft C++ components
         run: |
