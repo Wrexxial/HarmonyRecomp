@@ -209,7 +209,16 @@ def install(out_dir: Path) -> dict:
                 for p in sdk_installer.get("payloads", [])}
     sdk_dir = downloads / "sdk"
     msis = []
-    for name in SDK_MSI_PATTERNS:
+    # Headers are spread over more installers than the fixed list (lmcons.h, for
+    # example, is not in the desktop headers): take every x86/x64 header MSI.
+    wanted = list(SDK_MSI_PATTERNS)
+    for name in sorted(payloads):
+        lower = name.lower()
+        if (lower.endswith(".msi") and "headers" in lower and "arm" not in lower
+                and name not in wanted):
+            wanted.append(name)
+    log("SDK installers: " + ", ".join(n for n in wanted if n in payloads))
+    for name in wanted:
         if name in payloads:
             p = payloads[name]
             download(p["url"], sdk_dir / name, p.get("sha256"), p.get("size"), name)
