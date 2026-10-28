@@ -971,6 +971,29 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 9: title update patches in codegen on Windows.
+#
+# build.py turns on xex_apply_patches for codegen with REX_XEX_APPLY_PATCHES.
+# On Windows the cvar lives in rexruntime.dll while rexglue.exe applies the
+# environment to its own copy of the cvar registry, so the patch was never
+# applied there and codegen analysed version 1.04 with the 2.04 config. The
+# loader now also reads the variable itself (the game sets it too).
+SDK_PATCHES += [
+    (
+        "src/system/user_module.cpp",
+        "  if (REXCVAR_GET(xex_apply_patches)) {\n",
+        "  const char* apply_patches_env = std::getenv(\"REX_XEX_APPLY_PATCHES\");\n"
+        "  if (REXCVAR_GET(xex_apply_patches) ||\n"
+        "      (apply_patches_env && (apply_patches_env[0] == '1' || apply_patches_env[0] == 't'))) {\n",
+    ),
+    (
+        "src/system/user_module.cpp",
+        "#include <vector>\n",
+        "#include <cstdlib>\n#include <vector>\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:

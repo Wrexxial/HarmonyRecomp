@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -75,6 +76,13 @@ class HarmonyrecompApp : public rex::ReXApp {
   void OnLoadXexImage(std::string& xex_image) override {
     (void)xex_image;
     REXCVAR_SET(xex_apply_patches, true);
+    // The loader also reads this (SDK change 9): the cvar set here may be a
+    // different copy than the one rexruntime.dll checks.
+#ifdef _WIN32
+    _putenv_s("REX_XEX_APPLY_PATCHES", "1");
+#else
+    setenv("REX_XEX_APPLY_PATCHES", "1", 1);
+#endif
   }
 
   // Runtime and kernel exist now; start the LAN lobby service if netplay is on.
