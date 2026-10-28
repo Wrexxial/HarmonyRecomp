@@ -127,8 +127,8 @@ namespace HarmonyRecompSetup
             gameBox.TextChanged += (s, e) => UpdateGameCheck();
             stack.Controls.Add(gameCheck);
 
-            stack.Controls.Add(new Label { Text = "DLC folder (optional, your files from 58410A7A\\00000002):", AutoSize = true, Margin = new Padding(0, 10, 0, 0) });
-            stack.Controls.Add(PathRow(dlcBox, "Browse...", (s, e) => BrowseFolder(dlcBox, "Folder with your DLC packages")));
+            stack.Controls.Add(new Label { Text = "DLC folder (optional): your DLC files (58410A7A\\00000002) and title update (000B0000):", AutoSize = true, Margin = new Padding(0, 10, 0, 0) });
+            stack.Controls.Add(PathRow(dlcBox, "Browse...", (s, e) => BrowseFolder(dlcBox, "Folder with your DLC packages and title update")));
 
             stack.Controls.Add(new Label { Text = "Install to:", AutoSize = true, Margin = new Padding(0, 10, 0, 0) });
             stack.Controls.Add(PathRow(dirBox, "Browse...", (s, e) => BrowseFolder(dirBox, "Install folder")));

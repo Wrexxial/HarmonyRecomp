@@ -22,14 +22,14 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 - Graphics menu (F6): resolution scale, anti-aliasing, anisotropic filtering, VSync, fullscreen
 - FPS counter (F2)
 - **Online co-op without Xbox Live**: up to six players over LAN or a virtual LAN (Radmin VPN, ZeroTier, Tailscale)
-- **DLC support**: put your own DLC packages into `dlc/` (see below)
+- **DLC support**: all characters and stage packs, from your own DLC packages and title update 2 (see [DLC](#dlc))
 - Crash reports in `logs/` to make bug reports useful
 
 ## Installation (easy)
 
 1. Download **`HarmonyRecomp-Setup.exe`** from the [latest release](../../releases/latest).
 2. Run it. Windows may warn that the program is not signed ("Windows protected your PC"): click **More info → Run anyway**.
-3. Select **your game file**: the file without extension from `58410A7A\000D0000\` of your console dump (it starts with `LIVE`). Optionally select a folder with your DLC packages.
+3. Select **your game file**: the file without extension from `58410A7A\000D0000\` of your console dump (it starts with `LIVE`). Optionally select a folder with your DLC packages **and the title update** (see [DLC](#dlc)).
 4. Click **Install** and wait. The setup downloads the build tools (about 1 GB), and if Visual Studio is not installed, Microsoft's C++ components (about 400 MB, you are asked to accept Microsoft's license). Then your PC translates and compiles the game: **10 to 30 minutes** once, depending on your CPU. About 10 GB of free disk space are needed while it runs, about 1 GB afterwards.
 5. Click **Play**, or use the desktop shortcut.
 
@@ -53,7 +53,7 @@ The rest of this page is for building by hand and for developers.
 
 1. Clone this repository.
 2. Copy your game package into `game\` (exactly one file).
-3. Optional: copy your DLC packages into `dlc\` (see [DLC](#dlc)).
+3. Optional: copy your DLC packages and the title update into `dlc\` (see [DLC](#dlc)).
 4. Build:
 
    ```powershell
@@ -62,7 +62,7 @@ The rest of this page is for building by hand and for developers.
 
 `build.py` runs every step in order and skips what is already done:
 
-1. Extract the game package into `assets\` (and DLC packages into `assets\dlc\`)
+1. Extract the game package into `assets\`, DLC packages into `assets\dlc\` and a title update over `assets\`
 2. Clone the ReXGlue SDK at the commit in `sdk-pin.txt` into `..\rexglue-sdk\`, **next to** this folder, and apply the local SDK patches (`SDK_PATCHES` in the script)
 3. Build and install the SDK, including the `rexglue` codegen tool (takes the longest)
 4. Run codegen (about 2 minutes), output in `generated\`
@@ -130,20 +130,27 @@ The log shows every step with `[netplay]`: the chosen address, lobbies found, Qo
 
 ## DLC
 
-The game's downloadable characters and chapters are content packages (the files in `58410A7A/00000002/` on your console). Use your own:
+The game's downloadable characters, stage packs and music packs are content packages, the files in `58410A7A/00000002/` of your console dump. They only work with **title update 2** (game version 2.04), the file in `58410A7A/000B0000/`: the DLC was built for the updated game, and version 1.04 crashes at the title screen as soon as DLC is installed. Use your own files:
 
-1. Copy the package files into `dlc\` in the project folder.
-2. Run `python scripts\build.py`. It unpacks them into `assets\dlc\`, finds the character modules (`dll*.dll`) in them and recompiles them like the base characters.
-3. Start the game. On the first start the packages are installed into the runtime's content folder (this takes a moment); the log shows `[dlc] installed …`.
+1. Copy the DLC packages **and** the title update file into `dlc\` in the project folder (with the setup: into the folder you select as DLC folder).
+2. Run `python scripts\build.py`. It applies the title update over `assets\`, unpacks the DLC into `assets\dlc\` and recompiles the code modules in it (characters, enemies, bosses, projectiles: about 100 modules with all DLC). This makes the build noticeably longer.
+3. Start the game. On the first start the packages are installed into the runtime's content folder (this takes a moment); the log shows `[dlc] installed ...`.
 
-DLC support has been tested with the build and installation pipeline, but not yet with real DLC packages. If a DLC character crashes with "unregistered function", the module needs a small config file like `harmonyrecomp_dllsoma.toml`; please open an issue with the log and crash report.
+Notes:
+
+- The game only installs DLC packages that were part of the build (`dlc_packages.txt` next to the exe). DLC added later needs another build; a package the recompiler cannot handle is left out with a warning instead of stopping the build.
+- The title update can also be used without DLC. To build version 1.04 although the update is in `dlc\`, set `HARMONYRECOMP_TITLE_UPDATE=0`.
+- For online co-op, all players should use the same version (all with or all without the title update).
+
+Tested with all 12 DLC packages: characters and the Dracula's Castle stage work. If something crashes, please open an issue with the log and the crash report from `logs\`.
 
 ## Project layout
 
 | Path | Content |
 | --- | --- |
 | `harmonyrecomp_manifest.toml` | Codegen entry: `default.xex` and the six character modules |
-| `harmonyrecomp_config.toml` | Game-specific codegen settings (functions, CRT addresses, jump tables) |
+| `harmonyrecomp_config.toml` | Game-specific codegen settings (functions, CRT addresses, jump tables) for version 1.04 |
+| `harmonyrecomp_config_tu2.toml` | The same for version 2.04 (title update 2) |
 | `harmonyrecomp_dll*.toml` | Codegen settings per character module |
 | `harmonyrecomp.toml` | Template for the runtime settings |
 | `src/` | Host code: app, graphics menu, crash reports, runtime fixes, DLC installation |
@@ -156,15 +163,18 @@ DLC support has been tested with the build and installation pipeline, but not ye
 
 - `default.xex`: original name `dcHD_Master.exe`, version `0x00000104`, base `0x82000000`, size `0x960000`, entry `0x8263BA90`, XDK 2.0.9328.0.
 - Character modules are XEX DLLs in `data\player_dll\` with fixed load addresses (Alucard `0x83000000`, Soma `0x83090000`, Jonathan `0x83120000`, Charlotte `0x831B0000`, Shanoa `0x83240000`, Axe Armor `0x83510000`).
-- Every recompiled module has an indirect-call table in guest memory, normally right behind its image. The main table (~13 MB) would cover the character load addresses, so it lives at `0x8C000000`; character modules get 1 MB slots from `0x8D000000` (DLC characters follow the base ones). This needs the relocatable-table patches in `build.py`.
+- Every recompiled module has an indirect-call table in guest memory, normally right behind its image. The main table (~13 MB) would cover the character load addresses, so it lives at `0x8C000000`; the DLL modules' tables follow from `0x8D000000`. This needs the relocatable-table patches in `build.py`.
 - `sub_8277ECF0` uses a byte jump table without bounds check; its 16 real entries are listed in `harmonyrecomp_config.toml`.
-- SDK patches in `build.py` (applied automatically): switch tables in the function scanner, relocatable function tables, readable message box text, settings file escaping, and stale handles cached in guest dispatcher headers (a crash source in online sessions).
+- SDK patches in `build.py` (applied automatically): switch tables in the function scanner, relocatable function tables, readable message box text, settings file escaping, stale handles cached in guest dispatcher headers (a crash source in online sessions), DLL modules that share a load address (the DLC bosses all load at `0x8BF00000`), functions only referenced from data tables in DLL modules, and title update patches during codegen on Windows.
+- Title update 2 replaces the whole executable (nearly every function moved by about `+0x1C000`). Its config was rebuilt by instruction matching and by the same pointer/thunk scan that reproduces the 1.04 lists. The game reads the updated data from `update:`, which points to `assets` as well.
+- DLC: about 100 code modules with fixed load addresses between `0x83000000` and `0x8BF80000`. Their indirect-call tables are packed by size from `0x8D000000` (see `CMakeLists.txt`).
 - The netplay layer keeps the game's sockets in its own handle table and implements overlapped `WSARecvFrom`/`WSASendTo`/`WSAGetOverlappedResult`, which the SDK only stubs.
 
 ## Known issues
 
 - Closing the game sometimes ends with a crash report (heap corruption during runtime shutdown). The game has saved by then; it does not affect playing.
-- DLC support is untested with real packages (see above).
+- With DLC, leaving a stage logs `BaseHeap::Release failed` once per unloaded module (a double release in the SDK, harmless).
+- Not every DLC stage has been played yet.
 
 ## Credits
 
