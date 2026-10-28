@@ -68,6 +68,8 @@ DLC_SKIPPED = ROOT / "generated" / "dlc_skipped.txt"
 # Which title update is applied over assets/ ("none" or size:mtime:name).
 TU_STATE = ROOT / "assets" / ".title-update"
 CONTENT_TYPE_TITLE_UPDATE = 0x000B0000
+# Set once there is a codegen config for the updated executable (see step_dlc).
+TITLE_UPDATE_SUPPORTED = os.environ.get("HARMONYRECOMP_TITLE_UPDATE") == "1"
 TITLE_ID = 0x58410A7A
 
 
@@ -299,6 +301,13 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
 
     # Several title updates: the newest is the biggest one (they are cumulative).
     update = max(updates)[1] if updates else None
+    if update and not TITLE_UPDATE_SUPPORTED:
+        # Title update 2 (version 2.04) is a rebuilt executable: almost every
+        # function moved, so harmonyrecomp_config.toml (written for 1.04) and
+        # the runtime fixes do not fit it yet.
+        print(f"      note: title update {update.name} found, but title updates are not "
+              "supported yet; building the original version 1.04")
+        update = None
     step_title_update(update, game)
 
     DLC_LIST.parent.mkdir(parents=True, exist_ok=True)
@@ -816,6 +825,59 @@ SDK_PATCHES += [
 ]
 
 PATCH_STAMP = SDK_DIR / ".harmonyrecomp-patches"
+
+
+# SDK change 7: DLL modules that share a load address.
+#
+# Codegen loads every DLL module into one guest address space before analysing
+# them. The DLC stage bosses (DLL_Region, DLL_FcDracula, DLL_Ryukotsu,
+# DLL_PsBeel, ...) all load at 0x8BF00000 - the game only ever has one of them
+# loaded - so every boss after the first failed to load properly: its import
+# thunks stayed unresolved and codegen stopped with "target not in any
+# function" (GitHub issues #1, #3, #4). Each module is now copied into its
+# BinaryView (which owns its section data) and unloaded again before the next
+# one is loaded.
+SDK_PATCHES += [
+    (
+        "src/codegen/project_recompiler.cpp",
+        "  std::vector<rex::system::object_ref<rex::system::UserModule>> dllModules;\n",
+        "  // Copied out and unloaded one by one: DLC modules may share a load address.\n"
+        "  std::vector<BinaryView> dllViews;\n",
+    ),
+    (
+        "src/codegen/project_recompiler.cpp",
+        "                     userMod->xex_module()->base_address());\n"
+        "    dllModules.push_back(std::move(userMod));\n",
+        "                     userMod->xex_module()->base_address());\n"
+        "    dllViews.push_back(BinaryView::fromModule(*userMod->xex_module()));\n"
+        "    runtime->kernel_state()->UnloadUserModule(userMod, /*call_entry=*/false);\n",
+    ),
+    (
+        "src/codegen/project_recompiler.cpp",
+        "  for (size_t i = 0; i < dllModules.size(); ++i) {\n"
+        "    auto& userMod = dllModules[i];\n"
+        "    auto bv = BinaryView::fromModule(*userMod->xex_module());\n",
+        "  for (size_t i = 0; i < dllViews.size(); ++i) {\n"
+        "    auto bv = std::move(dllViews[i]);\n",
+    ),
+    (
+        "src/codegen/project_recompiler.cpp",
+        "    for (size_t i = 0; i < dllModules.size(); ++i) {\n"
+        "      auto& mod = targeted[i + 1];\n",
+        "    for (size_t i = 0; i < dllViews.size(); ++i) {\n"
+        "      auto& mod = targeted[i + 1];\n",
+    ),
+    (
+        # Only the executable must not overlap a DLL; DLLs that share an
+        # address are never loaded at the same time, and the runtime checks
+        # the modules actually loaded (FunctionDispatcher).
+        "src/codegen/project_recompiler.cpp",
+        "      uint32_t b_end = b_base + contexts[j].ctx.binary().imageSize();\n"
+        "      if (a_base < b_end && b_base < a_end) {\n",
+        "      uint32_t b_end = b_base + contexts[j].ctx.binary().imageSize();\n"
+        "      if (i == 0 && a_base < b_end && b_base < a_end) {\n",
+    ),
+]
 
 
 def sdk_patch_hash() -> str:
