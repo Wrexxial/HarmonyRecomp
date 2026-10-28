@@ -47,6 +47,18 @@ class HarmonyrecompApp : public rex::ReXApp {
   // project's assets folder relative to the exe.
   void OnConfigurePaths(rex::PathConfig& paths) override {
     config_path_ = paths.config_path;
+    FindGameDataRoot(paths);
+    // With title update 2 the game reads its updated files from the update:
+    // device (data/player, data/text, ...). build.py copied them over the
+    // game data, next to default.xexp, so update: is the game data folder too.
+    std::error_code ec;
+    if (paths.update_data_root.empty() && !paths.game_data_root.empty() &&
+        std::filesystem::exists(paths.game_data_root / "default.xexp", ec)) {
+      paths.update_data_root = paths.game_data_root;
+    }
+  }
+
+  void FindGameDataRoot(rex::PathConfig& paths) {
     if (!paths.game_data_root.empty()) {
       return;
     }
