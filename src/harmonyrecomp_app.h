@@ -18,6 +18,7 @@
 #include <rex/graphics/graphics_system.h>
 #include <rex/logging.h>
 #include <rex/rex_app.h>
+#include <rex/system/flags.h>
 #include <rex/ui/keybinds.h>
 
 #include "crash_log.h"
@@ -65,6 +66,15 @@ class HarmonyrecompApp : public rex::ReXApp {
         return;
       }
     }
+  }
+
+  // A title update applied at build time leaves default.xexp and *.dllp next
+  // to the binaries; the recompiled code was generated from the patched
+  // modules, so the runtime must apply the same patches when it loads them.
+  // Without a title update there is no patch file and nothing changes.
+  void OnLoadXexImage(std::string& xex_image) override {
+    (void)xex_image;
+    REXCVAR_SET(xex_apply_patches, true);
   }
 
   // Runtime and kernel exist now; start the LAN lobby service if netplay is on.

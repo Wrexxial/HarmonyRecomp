@@ -3,12 +3,13 @@
 
 Runs every step in order and skips the ones that are already done:
 
-  1. Extract the XBLA package in game/ into assets/   (needs assets/default.xex)
-     and any DLC packages in dlc/ into assets/dlc/
+  1. Extract the XBLA package in game/ into assets/   (needs assets/default.xex),
+     any DLC packages in dlc/ into assets/dlc/, and a title update in dlc/
+     (if present) over assets/
   2. Clone the ReXGlue SDK at the pinned commit      (../rexglue-sdk, next to the project)
   3. Build and install the SDK, including the rexglue codegen tool
   4. Run codegen: PowerPC -> C++ for default.xex, the six player DLLs and the
-     player DLLs of your DLC
+     modules of your DLC
   5. Build the game executable
 
 Usage:
@@ -19,7 +20,7 @@ Usage:
 
 Used by the installer (HarmonyRecomp-Setup.exe) and the release workflow:
   --game FILE        game package to use instead of the file in game/
-  --dlc-dir DIR      DLC packages to use instead of dlc/
+  --dlc-dir DIR      DLC packages (and title update) to use instead of dlc/
   --sdk-dir DIR      prebuilt SDK (install folder from a release) instead of
                      cloning and building ../rexglue-sdk
   --sdk-only         clone, patch, build and install the SDK, then stop
@@ -35,6 +36,7 @@ import argparse
 import hashlib
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +58,16 @@ DLC_ASSETS = ROOT / "assets" / "dlc"
 # Manifest used for codegen when DLC modules are present: the base manifest
 # plus one [[modules]] entry per DLC player DLL. Generated, not committed.
 LOCAL_MANIFEST = ROOT / "harmonyrecomp_manifest.local.toml"
+# DLC packages whose modules made it through codegen. The game only installs
+# these (src/dlc.cpp): a package whose code was not recompiled would crash.
+DLC_LIST = ROOT / "generated" / "dlc_packages.txt"
+DLC_LIST_NAME = "dlc_packages.txt"
+# DLC packages left out of the build because codegen failed on one of their
+# modules (filled in by step_codegen, read by step_dlc).
+DLC_SKIPPED = ROOT / "generated" / "dlc_skipped.txt"
+# Which title update is applied over assets/ ("none" or size:mtime:name).
+TU_STATE = ROOT / "assets" / ".title-update"
+CONTENT_TYPE_TITLE_UPDATE = 0x000B0000
 TITLE_ID = 0x58410A7A
 
 
@@ -153,41 +165,116 @@ def base_guest_paths() -> set[str]:
     return paths
 
 
-def step_dlc(dlc_dir: Path | None = None) -> None:
-    """Unpack DLC packages from dlc/ and add their player DLLs to codegen.
+def package_files(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.glob("*")
+                  if p.is_file() and not p.name.startswith(".") and p.suffix.lower() != ".txt")
 
-    The game loads DLC characters with XexLoadImage from the mounted package
-    ("<device>:\\data\\player_dll\\dllXyz.dll"); the runtime matches the path
-    without the device prefix, so a DLC module only needs a manifest entry with
-    the path inside its package. The packages themselves are installed into the
-    runtime's content folder when the game starts (see src/dlc.cpp).
+
+def file_stamp(path: Path) -> str:
+    return f"{path.stat().st_size}:{int(path.stat().st_mtime)}:{path.name}"
+
+
+def step_title_update(update: Path | None, game: Path | None) -> None:
+    """Apply a title update over assets/, or remove one that is no longer wanted.
+
+    A title update package (content type 000B0000) holds default.xexp and
+    data/player_dll/*.dllp (binary patches, applied by the SDK when it loads
+    default.xex and the player DLLs, at codegen time and in the game) plus
+    replacement data files. Everything is copied over assets/; the base files
+    are restored by extracting the game package again.
+    """
+    want = file_stamp(update) if update else "none"
+    have = TU_STATE.read_text().strip() if TU_STATE.exists() else "none"
+    if want == have:
+        if update:
+            print(f"      title update {update.name} already applied")
+        return
+    import extract_game  # noqa: E402
+    if have != "none":
+        print("      removing the old title update: extracting the game package again")
+        assets = ROOT / "assets"
+        for entry in assets.iterdir():
+            if entry.name == "dlc":
+                continue
+            shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+        step_extract(game)
+    if update:
+        staging = ROOT / "generated" / "title-update"
+        if staging.exists():
+            shutil.rmtree(staging)
+        package = extract_game.extract(update, staging, require_xex=False)
+        if not (staging / "default.xexp").exists():
+            shutil.rmtree(staging)
+            sys.exit(f"error: {update.name} contains no default.xexp")
+        for src in staging.rglob("*"):
+            if src.is_file() and src.name != "ArcadeInfo.xml":
+                dst = ROOT / "assets" / src.relative_to(staging)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+        shutil.rmtree(staging)
+        print(f"      applied {package.display_name or update.name}")
+    TU_STATE.write_text(want + "\n")
+
+
+def read_skipped() -> set[str]:
+    """DLC packages left out by an earlier codegen run with the same SDK
+    changes (a newer SDK patch may handle them, so they are retried then)."""
+    if not DLC_SKIPPED.exists():
+        return set()
+    lines = [l.strip() for l in DLC_SKIPPED.read_text().splitlines() if l.strip()]
+    if not lines or lines[0] != f"#sdk {sdk_patch_hash()}":
+        return set()
+    return set(lines[1:])
+
+
+def write_skipped(names: set[str]) -> None:
+    DLC_SKIPPED.parent.mkdir(parents=True, exist_ok=True)
+    DLC_SKIPPED.write_text(f"#sdk {sdk_patch_hash()}\n" + "".join(n + "\n" for n in sorted(names)))
+
+
+def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
+    """Unpack DLC packages from dlc/ and add their modules to codegen.
+
+    The game loads DLC code with XexLoadImage from the mounted package
+    ("<device>:\\data\\player\\dllXyz.dll", "<device>:\\dll\\enemy\\..."); the
+    runtime matches the path without the device prefix, so a DLC module only
+    needs a manifest entry with the path inside its package. The packages
+    themselves are installed into the runtime's content folder when the game
+    starts (see src/dlc.cpp). A title update in the same folder is applied
+    over assets/ (step_title_update).
     """
     dlc_dir = dlc_dir or DLC_DIR
-    packages = sorted(p for p in dlc_dir.glob("*")
-                      if p.is_file() and not p.name.startswith(".") and p.suffix.lower() != ".txt")
-    if not packages:
-        if LOCAL_MANIFEST.exists():
-            LOCAL_MANIFEST.unlink()
-        print("      no DLC packages in dlc/")
-        return
-
     sys.path.insert(0, str(ROOT / "scripts"))
     import extract_game  # noqa: E402  (scripts/ is not a package)
 
+    skipped = read_skipped()
+
+    updates: list[tuple[int, Path]] = []
     known = base_guest_paths()
     modules: list[tuple[str, str, str]] = []  # (guest path, file path, name)
-    for package_path in packages:
+    included: list[str] = []
+    for package_path in package_files(dlc_dir):
         try:
             package = extract_game.Package(package_path)
-        except RuntimeError as err:
+        except (OSError, RuntimeError) as err:
             print(f"      skipping {package_path.name}: {err}")
             continue
         if package.title_id != TITLE_ID:
             print(f"      skipping {package_path.name}: belongs to title {package.title_id:08X}")
             continue
+        if package.content_type == CONTENT_TYPE_TITLE_UPDATE:
+            updates.append((package_path.stat().st_size, package_path))
+            continue
         if package.content_type != extract_game.CONTENT_TYPE_MARKETPLACE:
             print(f"      skipping {package_path.name}: not a DLC package "
                   f"(content type {package.content_type:08X})")
+            continue
+        label = package.display_name or package_path.name
+        if package_path.name in skipped:
+            print(f"      DLC: {label} - LEFT OUT, its code could not be recompiled "
+                  f"(see {DLC_SKIPPED.relative_to(ROOT)})")
             continue
         out_dir = DLC_ASSETS / package_path.name
         marker = out_dir / ".extracted"
@@ -197,7 +284,7 @@ def step_dlc(dlc_dir: Path | None = None) -> None:
                 shutil.rmtree(out_dir)
             extract_game.extract(package_path, out_dir, require_xex=False)
             marker.write_text(stamp + "\n")
-        print(f"      DLC: {package.display_name or package_path.name}")
+        count = 0
         for dll in sorted(out_dir.rglob("*")):
             if not dll.is_file() or dll.suffix.lower() != ".dll":
                 continue
@@ -206,11 +293,21 @@ def step_dlc(dlc_dir: Path | None = None) -> None:
                 continue
             known.add(guest)
             modules.append((guest, dll.relative_to(ROOT).as_posix(), dll.stem))
-            print(f"        module {guest}")
+            count += 1
+        print(f"      DLC: {label} ({count} code modules)")
+        included.append(package_path.name)
 
+    # Several title updates: the newest is the biggest one (they are cumulative).
+    update = max(updates)[1] if updates else None
+    step_title_update(update, game)
+
+    DLC_LIST.parent.mkdir(parents=True, exist_ok=True)
+    DLC_LIST.write_text("".join(name + "\n" for name in included))
     if not modules:
         if LOCAL_MANIFEST.exists():
             LOCAL_MANIFEST.unlink()
+        if not included:
+            print("      no DLC packages in dlc/")
         return
     text = MANIFEST.read_text(encoding="utf-8").rstrip() + "\n"
     text = ("# Generated by scripts/build.py from harmonyrecomp_manifest.toml and the\n"
@@ -849,20 +946,22 @@ CODEGEN_STAMP = ROOT / "generated" / ".harmonyrecomp-codegen"
 
 def codegen_inputs_hash() -> str:
     """Hash of everything codegen output depends on besides the game binary:
-    the manifest, every config file it includes, and the SDK changes."""
+    the manifest, every config file it includes, the SDK changes and the
+    title update."""
     h = hashlib.sha256(sdk_patch_hash().encode())
     files = [MANIFEST, *sorted(ROOT.glob("harmonyrecomp_*.toml"))]  # includes the local manifest
     for path in dict.fromkeys(files):
         h.update(path.name.encode() + b"\0" + path.read_bytes() + b"\0")
+    h.update((TU_STATE.read_text() if TU_STATE.exists() else "none").encode())
     return h.hexdigest()[:16]
 
 
 def check_codegen_output() -> None:
-    """Every player DLL must report its table address (SDK change 5), or the
+    """Every DLL module must report its table address (SDK change 5), or the
     loader and the DLL's own code would disagree about where the table is."""
     for manifest_line in active_manifest().read_text(encoding="utf-8").splitlines():
         line = manifest_line.strip()
-        if not line.startswith('out_directory_path = "generated/dll'):
+        if not line.startswith('out_directory_path = "generated/') or line.endswith('/default"'):
             continue
         out_dir = ROOT / line.split('"')[1]
         register = out_dir / "harmonyrecomp_register.cpp"
@@ -875,7 +974,36 @@ def check_codegen_output() -> None:
             )
 
 
-def step_codegen(tool: Path, force: bool) -> None:
+def run_codegen(tool: Path) -> tuple[int, str]:
+    """Run codegen, show its output live and return (exit code, output)."""
+    args = [str(tool), "codegen", str(active_manifest())]
+    print("+ " + " ".join(args), flush=True)
+    # Title update patches (default.xexp, *.dllp next to the binaries) are
+    # applied when codegen loads the modules, as the game does at runtime.
+    env = dict(os.environ, REX_XEX_APPLY_PATCHES="true")
+    proc = subprocess.Popen(args, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace")
+    lines = []
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        lines.append(line)
+    return proc.wait(), "".join(lines)
+
+
+def dlc_package_of_module(name: str) -> str | None:
+    """DLC package (file name) a failed module belongs to, from the manifest."""
+    text = active_manifest().read_text(encoding="utf-8") if LOCAL_MANIFEST.exists() else ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('file_path = "assets/dlc/'):
+            path = line.split('"')[1]
+            if Path(path).stem.lower() == name.lower():
+                return path.split("/")[2]
+    return None
+
+
+def step_codegen(tool: Path, force: bool, dlc_dir: Path | None, game: Path | None) -> None:
     done = (ROOT / "generated" / "default" / "sources.cmake").exists()
     current = codegen_inputs_hash()
     up_to_date = (done and CODEGEN_STAMP.exists()
@@ -885,13 +1013,32 @@ def step_codegen(tool: Path, force: bool) -> None:
         check_codegen_output()
         return
     if done and not force:
-        print("[4/5] Codegen config or SDK changed, running codegen again (about 2 minutes)")
+        print("[4/5] Codegen config or SDK changed, running codegen again")
     else:
-        print("[4/5] Running codegen (about 2 minutes)")
+        print("[4/5] Running codegen (2 to 10 minutes, longer with all DLC)")
     progress("codegen")
-    run([tool, "codegen", active_manifest()], cwd=ROOT)
+    while True:
+        code, output = run_codegen(tool)
+        if code == 0:
+            break
+        # A DLC module the recompiler cannot handle must not stop the whole
+        # build: leave its package out (the game then does not install it)
+        # and try again. Failures in the base game still stop here.
+        failed = re.findall(r"Analysis failed for '([^']+)'", output)
+        packages = {dlc_package_of_module(name) for name in failed}
+        if not failed or None in packages:
+            sys.exit(f"error: codegen failed with exit code {code}")
+        skipped = read_skipped()
+        if packages <= skipped:
+            sys.exit(f"error: codegen failed with exit code {code}")
+        skipped |= packages
+        write_skipped(skipped)
+        for package in sorted(packages):
+            print(f"\nwarning: codegen failed for module(s) {', '.join(failed)} of DLC package "
+                  f"{package}; building without that package", flush=True)
+        step_dlc(dlc_dir, game)
     check_codegen_output()
-    CODEGEN_STAMP.write_text(current + "\n")
+    CODEGEN_STAMP.write_text(codegen_inputs_hash() + "\n")
 
 
 def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Path:
@@ -910,6 +1057,8 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
         # once, so your own edits next to the exe are kept.
         shutil.copy2(ROOT / "harmonyrecomp.toml", runtime_cfg)
         print(f"      wrote {runtime_cfg}")
+    # Which DLC packages the game may install (src/dlc.cpp).
+    (out_dir / DLC_LIST_NAME).write_text(DLC_LIST.read_text() if DLC_LIST.exists() else "")
     print(f"\nDone. Output is in {out_dir}")
     return out_dir
 
@@ -935,8 +1084,9 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None) -> None:
         if target_assets.exists():
             shutil.rmtree(target_assets)
         shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
-    dlc_dir = dlc_dir or DLC_DIR
-    packages = [p for p in dlc_dir.glob("*") if p.is_file()] if dlc_dir.is_dir() else []
+    shutil.copy2(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
+    built = set((out_dir / DLC_LIST_NAME).read_text().split())
+    packages = [p for p in package_files(dlc_dir or DLC_DIR) if p.name in built]
     if packages:
         (target / "dlc").mkdir(exist_ok=True)
         for package in packages:
@@ -970,7 +1120,7 @@ def main() -> int:
         return 0
 
     step_extract(args.game)  # checks the game file first: the clearest error for a wrong file
-    step_dlc(args.dlc_dir)
+    step_dlc(args.dlc_dir, args.game)
     check_tools(need_git=args.sdk_dir is None)
     if args.sdk_dir:
         prefix = args.sdk_dir.resolve()
@@ -984,7 +1134,7 @@ def main() -> int:
         step_clone_sdk()
         tool = step_build_sdk(pid, config)
         prefix = sdk_install_dir(pid)
-    step_codegen(tool, args.force_codegen)
+    step_codegen(tool, args.force_codegen, args.dlc_dir, args.game)
     if args.codegen_only:
         return 0
     out_dir = step_build_game(pid, config, prefix, args.jobs)
