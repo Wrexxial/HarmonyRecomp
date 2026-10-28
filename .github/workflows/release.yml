@@ -186,9 +186,10 @@ jobs:
           & clang++ --version *>&1 | Tee-Object -FilePath $log
           & cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$root\package\sdk" *>&1 | Tee-Object -FilePath $log -Append
           if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
-          # Without the game there is no generated code, so build the objects of src/ only.
+          # Without the game there is no generated code, so build the objects of src/ only
+          # (main.cpp includes the generated headers).
           $objects = & ninja -C out/build/win-amd64-release -t targets all | ForEach-Object { ($_ -split ':')[0] } |
-                     Where-Object { $_ -match '^CMakeFiles/harmonyrecomp\.dir/src/.*\.obj$' }
+                     Where-Object { $_ -match '^CMakeFiles/harmonyrecomp\.dir/src/.*\.obj$' -and $_ -notmatch 'src/main\.cpp' }
           "objects: $($objects.Count)" | Tee-Object -FilePath $log -Append
           & ninja -C out/build/win-amd64-release @objects *>&1 | Tee-Object -FilePath $log -Append
           if ($LASTEXITCODE -ne 0) { throw "compiling the project sources failed" }
