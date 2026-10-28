@@ -25,6 +25,18 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 - **DLC support**: put your own DLC packages into `dlc/` (see below)
 - Crash reports in `logs/` to make bug reports useful
 
+## Installation (easy)
+
+1. Download **`HarmonyRecomp-Setup.exe`** from the [latest release](../../releases/latest).
+2. Run it. Windows may warn that the program is not signed ("Windows protected your PC"): click **More info → Run anyway**.
+3. Select **your game file**: the file without extension from `58410A7A\000D0000\` of your console dump (it starts with `LIVE`). Optionally select a folder with your DLC packages.
+4. Click **Install** and wait. The setup downloads the build tools (about 1 GB), and if Visual Studio is not installed, Microsoft's C++ components (about 400 MB, you are asked to accept Microsoft's license). Then your PC translates and compiles the game: **10 to 30 minutes** once, depending on your CPU. About 10 GB of free disk space are needed while it runs, about 1 GB afterwards.
+5. Click **Play**, or use the desktop shortcut.
+
+Nothing of the game is downloaded: everything is built from your own copy on your own PC. To update, run the setup of a newer release; your settings and saves are kept. If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
+
+The rest of this page is for building by hand and for developers.
+
 ## Requirements
 
 - Windows 10/11, x86-64
