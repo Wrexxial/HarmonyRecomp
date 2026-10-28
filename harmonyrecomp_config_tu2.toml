@@ -1,0 +1,103 @@
+# harmonyrecomp - ReXGlue codegen config for Castlevania: Harmony of Despair
+# with title update 2 applied (default.xex version 2.04, see build.py,
+# step_title_update). Used instead of harmonyrecomp_config.toml when the
+# title update is part of the build.
+#
+# The update replaces the whole executable: nearly every function moved
+# (memcpy 0x8273A030 -> 0x827567D0, most code by +0x1C000 to +0x1C800), so
+# every address of harmonyrecomp_config.toml was located again:
+#  - CRT routines and sub_8279B498 (sub_8277ECF0 in 1.04) by matching their
+#    instructions with immediates and branch offsets masked;
+#  - the functions only reachable through pointers with the same scan that
+#    produced the 1.04 lists (a compiler thunk, or a pointer in .rdata/.data,
+#    in a code gap left by a first codegen pass, after a return/branch/padding
+#    and ending within 64 instructions). Applied to 1.04 this scan reproduces
+#    every entry of harmonyrecomp_config.toml.
+
+# memcpy / memmove / memset (sub_8273A030 / sub_8273AD00 / sub_8273A590 in 1.04)
+[rexcrt]
+memcpy  = 0x827567D0
+memmove = 0x827574A0
+memset  = 0x82756D30
+
+[functions]
+# Network message dispatch (sub_8277ECF0 in 1.04), see harmonyrecomp_config.toml.
+0x8279B498 = { end = 0x8279B5E8 }
+
+# Compiler thunks, called through member-function pointers built in code.
+0x82223170 = {}   # vcall thunk
+0x82223180 = {}   # vcall thunk
+0x82223190 = {}   # vcall thunk
+0x822231A0 = {}   # vcall thunk
+0x822231B0 = {}   # vcall thunk
+0x822231C0 = {}   # vcall thunk
+0x822231D0 = {}   # vcall thunk
+0x822231E0 = {}   # vcall thunk
+0x822231F0 = {}   # vcall thunk
+0x825C3D88 = {}   # vcall thunk
+0x826112C0 = {}   # vcall thunk
+0x826112D0 = {}   # vcall thunk
+0x826112E0 = {}   # vcall thunk
+0x826112F0 = {}   # vcall thunk
+0x82611300 = {}   # vcall thunk
+0x826609B0 = {}   # adjustor thunk
+0x82664170 = {}   # adjustor thunk
+0x82664178 = {}   # adjustor thunk
+0x82664180 = {}   # adjustor thunk
+0x82664188 = {}   # adjustor thunk
+0x82664198 = {}   # adjustor thunk
+0x826641A0 = {}   # adjustor thunk
+0x82668F68 = {}   # adjustor thunk
+0x82668F70 = {}   # adjustor thunk
+0x82668F78 = {}   # adjustor thunk
+0x82668F80 = {}   # adjustor thunk
+0x82668F88 = {}   # adjustor thunk
+0x82668F90 = {}   # adjustor thunk
+0x82669230 = {}   # adjustor thunk
+0x82669238 = {}   # adjustor thunk
+0x82669240 = {}   # adjustor thunk
+0x82669248 = {}   # adjustor thunk
+0x82669250 = {}   # adjustor thunk
+0x8266A480 = {}   # adjustor thunk
+0x8266B1D0 = {}   # adjustor thunk
+0x8267DB28 = {}   # adjustor thunk
+
+# Small functions referenced by pointers in .rdata/.data. 0x8266EB68 (and the
+# thunk 0x826609B0 above) are also tail-branch targets the first codegen pass
+# left unresolved.
+0x8223FBA8 = {}   # pointer at 821E15A0
+0x82250800 = {}   # pointer at 821E19E4
+0x82250828 = {}   # pointer at 821E19E8
+0x822CB278 = {}   # pointer at 821E2EF4
+0x823989B0 = {}   # pointer at 821D7AF8
+0x823AFE48 = {}   # pointer at 821D7C30
+0x8246E290 = {}   # pointer at 821E9804
+0x824CCC58 = {}   # pointer at 821EBED4
+0x82508500 = {}   # pointer at 821EDDC8
+0x825A7458 = {}   # pointer at 821F434C
+0x825BBD10 = {}   # pointer at 821F48C8
+0x825CF458 = {}   # pointer at 821F50EC
+0x825D5E38 = {}   # pointer at 821F5380
+0x825DE038 = {}   # pointer at 821F59A0
+0x82601D60 = {}   # pointer at 821F65B0
+0x826028A8 = {}   # pointer at 821F6610
+0x82606478 = {}   # pointer at 821F68B8
+0x82609840 = {}   # pointer at 821F695C
+0x826098C0 = {}   # pointer at 821F6960
+0x8260F5C0 = {}   # pointer at 821F6BE0
+0x8265D54C = {}   # pointer at 821F9CD0
+0x82669828 = {}   # pointer at 82001D9C
+0x8266DF58 = {}   # pointer at 82001FEC
+0x8266EB68 = {}   # pointer at 82001E14
+
+# Byte-indexed jump table without bounds check (0x8277ED34 in 1.04, same
+# table bytes at 0x82068E80): types 1..16, see harmonyrecomp_config.toml.
+[[switch_tables]]
+address = 0x8279B4DC
+register = 11
+labels = [
+  0x8279B510, 0x8279B510, 0x8279B510, 0x8279B510, # 0-3   types 1-4
+  0x8279B5E8, 0x8279B510, 0x8279B510, 0x8279B510, # 4-7   types 5-8
+  0x8279B510, 0x8279B4E0, 0x8279B510, 0x8279B510, # 8-11  types 9-12
+  0x8279B4E0, 0x8279B4E0, 0x8279B4E0, 0x8279B4E0, # 12-15 types 13-16
+]
