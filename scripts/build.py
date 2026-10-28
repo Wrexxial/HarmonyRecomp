@@ -994,6 +994,43 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 10: unloading a recompiled DLL never released it.
+#
+# LoadUserModule looks the recompiled code up by the path the title passed
+# (normalized to "dll/enemy/dll_psbeel.dll"), UnloadUserModule by the module's
+# resolved path ("\Device\Content\8\dll\enemy\DLL_PsBeel.dll", normalized to
+# "device/content/8/dll/..."), which matches nothing. The code, its function
+# table and the library stayed registered, so the next load of the same module
+# was refused ("already loaded; refusing duplicate load") and the game crashed:
+# replaying the Lord of Flies stage. Fall back to the loaded recompiled module
+# whose guest path ends the resolved path.
+SDK_PATCHES += [
+    (
+        "src/system/kernel_state.cpp",
+        "    auto recomp = FindRecompiledModule(module->path());\n"
+        "    if (recomp) {\n"
+        "      const std::string& key = recomp->guest_path;\n"
+        "      auto cleared_range = function_dispatcher_->UnregisterModule(key);\n",
+        "    auto recomp = FindRecompiledModule(module->path());\n"
+        "    if (!recomp) {\n"
+        "      const std::string resolved = NormalizeGuestPath(module->path());\n"
+        "      for (const auto& info : recompiled_modules_) {\n"
+        "        const std::string& gp = info.guest_path;\n"
+        "        if (!gp.empty() && resolved.size() > gp.size() && resolved.ends_with(gp) &&\n"
+        "            resolved[resolved.size() - gp.size() - 1] == '/' &&\n"
+        "            module_libraries_.contains(gp)) {\n"
+        "          recomp = info;\n"
+        "          break;\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "    if (recomp) {\n"
+        "      const std::string& key = recomp->guest_path;\n"
+        "      auto cleared_range = function_dispatcher_->UnregisterModule(key);\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
