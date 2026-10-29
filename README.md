@@ -93,6 +93,20 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F6 | Graphics menu, including the frame rate limit ("Save" writes `harmonyrecomp.toml`) |
 | `^` | Log console |
 
+### Controls
+
+A controller (XInput, or any controller SDL supports) works out of the box. Keyboard and mouse are off by default; add `mnk_mode = true` to `harmonyrecomp.toml` to use them:
+
+| Key | Button | Key | Button |
+| --- | --- | --- | --- |
+| W A S D | Left stick | Arrow keys | D-pad |
+| Space | A | Shift | B |
+| R | X | E | Y |
+| Q / F | LB / RB | Right / left mouse button | LT / RT |
+| Escape | Start | Tab | Back |
+
+Every key can be changed in the same file (`keybind_a = "J"`, `keybind_start = "Enter"`, ...) or in the F4 settings menu.
+
 Logs are written to `logs\` next to the exe. If the game crashes, a `crash_*.txt` appears there as well; please attach it (and the matching log) to bug reports. The build also writes `harmonyrecomp.map`, which turns the addresses in a crash report into function names.
 
 ## Online co-op

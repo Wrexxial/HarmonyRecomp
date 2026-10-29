@@ -621,6 +621,37 @@ bool HandleXgi(uint32_t message, uint32_t buffer_ptr, uint32_t buffer_length,
       *result = RunRequest(overlapped_ptr, false, [req] { return Migrate(req); });
       return true;
     }
+    case 0x000B0021: {  // XUserReadStats (leaderboards)
+      // No leaderboard server: answer every requested view with zero rows.
+      // The SDK returned success without writing the results, so the game
+      // parsed an uninitialized buffer (its own malloc) as view and row
+      // pointers and crashed on the results screen after an online stage
+      // (GitHub issue #14).
+      uint32_t specs_count = rex::memory::load_and_swap<uint32_t>(buffer + 12);
+      uint32_t specs_ptr = rex::memory::load_and_swap<uint32_t>(buffer + 16);
+      uint32_t results_size = rex::memory::load_and_swap<uint32_t>(buffer + 20);
+      uint32_t results_ptr = rex::memory::load_and_swap<uint32_t>(buffer + 24);
+      *result = RunRequest(overlapped_ptr, false, [=] {
+        auto* results = G<uint8_t>(results_ptr);
+        if (!results || results_size < 8) return uint32_t(X_ERROR_INSUFFICIENT_BUFFER);
+        // XUSER_STATS_READ_RESULTS { dwNumViews, pViews }, then the views:
+        // XUSER_STATS_VIEW { dwViewId, dwTotalViewRows, dwNumRows, pRows }.
+        uint32_t views = specs_count;
+        if (results_size < 8 + 16ull * views) views = 0;
+        std::memset(results, 0, std::min<uint32_t>(results_size, 8 + 16 * views));
+        rex::memory::store_and_swap<uint32_t>(results + 0, views);
+        rex::memory::store_and_swap<uint32_t>(results + 4, views ? results_ptr + 8 : 0);
+        auto* specs = G<uint8_t>(specs_ptr);
+        for (uint32_t i = 0; i < views; ++i) {
+          // XUSER_STATS_SPEC { dwViewId, dwNumColumnIds, rgwColumnIds[64] } = 136 bytes.
+          uint32_t view_id = specs ? rex::memory::load_and_swap<uint32_t>(specs + 136 * i) : 0;
+          rex::memory::store_and_swap<uint32_t>(results + 8 + 16 * i, view_id);
+        }
+        REXLOG_INFO("[netplay] XUserReadStats: {} view(s), no rows (no leaderboard server)", views);
+        return uint32_t(X_ERROR_SUCCESS);
+      });
+      return true;
+    }
     case 0x000B001F:    // XSessionModifySkill
     case 0x000B0025:    // XSessionWriteStats
     case 0x000B0026: {  // XSessionFlushStats
