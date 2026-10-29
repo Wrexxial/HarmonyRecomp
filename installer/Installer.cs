@@ -308,7 +308,10 @@ namespace HarmonyRecompSetup
             }
             string target = Path.Combine(downloads, asset);
             string url = "https://github.com/" + RepoSlug + "/releases/download/" + ReleaseTag + "/" + asset;
-            if (File.Exists(target) && File.Exists(target + ".ok"))
+            // ".ok" names the release the file came from: a download of an older
+            // release (same file name) must not be reused after an update.
+            if (File.Exists(target) && File.Exists(target + ".ok") &&
+                File.ReadAllText(target + ".ok").Trim() == ReleaseTag)
             {
                 Log("Already downloaded: " + asset);
                 return target;
@@ -319,7 +322,7 @@ namespace HarmonyRecompSetup
                 try
                 {
                     Download(url, target, start, weight, asset);
-                    File.WriteAllText(target + ".ok", "");
+                    File.WriteAllText(target + ".ok", ReleaseTag);
                     return target;
                 }
                 catch (SetupCancelled) { throw; }
