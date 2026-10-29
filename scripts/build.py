@@ -1035,6 +1035,39 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 11: heap corruption when the game closes (GitHub issue #10).
+#
+# ReXApp::OnDestroy destroyed the window first and the runtime after it. The
+# runtime's input drivers keep a pointer to the window: the keyboard/mouse
+# driver's destructor then called RemoveInputListener on the destroyed window,
+# corrupting the heap ("exception 0xC0000374" in rexruntime.dll from
+# Runtime::~Runtime -> InputSystem::Shutdown). Its OnClosing handler detaches
+# it only when the window is closed by the user, not when the game quits. The
+# input drivers are now shut down while the window still exists.
+SDK_PATCHES += [
+    (
+        "src/ui/rex_app.cpp",
+        "  if (window_) {\n"
+        "    window_->RemoveInputListener(this);\n"
+        "    window_->RemoveListener(this);\n"
+        "  }\n"
+        "  window_.reset();\n"
+        "  runtime_.reset();\n",
+        "  // Input drivers hold the window and detach from it in their destructors,\n"
+        "  // so they go first, while the window still exists.\n"
+        "  if (runtime_ && runtime_->input_system()) {\n"
+        "    runtime_->input_system()->Shutdown();\n"
+        "  }\n"
+        "  if (window_) {\n"
+        "    window_->RemoveInputListener(this);\n"
+        "    window_->RemoveListener(this);\n"
+        "  }\n"
+        "  window_.reset();\n"
+        "  runtime_.reset();\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
