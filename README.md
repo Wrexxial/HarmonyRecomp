@@ -19,7 +19,7 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 ## Features
 
 - Runs the full game natively on Windows: all stages, all six base characters
-- Graphics menu (F6): resolution scale, anti-aliasing, anisotropic filtering, VSync, fullscreen
+- Graphics menu (F6): resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), fullscreen
 - FPS counter (F2)
 - **Online co-op without Xbox Live**: up to six players over LAN or a virtual LAN (Radmin VPN, ZeroTier, Tailscale)
 - **DLC support**: all characters and stage packs, from your own DLC packages and title update 2 (see [DLC](#dlc))
@@ -35,7 +35,9 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 
 If the setup stops with "the rexglue tool could not start", install the latest [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) and run it again.
 
-Nothing of the game is downloaded: everything is built from your own copy on your own PC. To update, run the setup of a newer release; your settings and saves are kept. If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
+Nothing of the game is downloaded: everything is built from your own copy on your own PC.
+
+**Updating:** download the newest `HarmonyRecomp-Setup.exe` and run it with the same install folder; your settings and saves are kept. (Setups before v0.3.3 could reuse an old download: if an update to v0.3.3 or newer seems to change nothing, delete the `.setup` folder in the install folder and run it again.) If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
 
 The rest of this page is for building by hand and for developers.
 
@@ -70,7 +72,7 @@ The rest of this page is for building by hand and for developers.
 4. Run codegen (about 2 minutes), output in `generated\`
 5. Build the game into `out\build\win-amd64-release\`
 
-Options: `--debug`, `--codegen-only`, `--force-codegen`. Codegen reruns automatically when the manifest, a `harmonyrecomp_*.toml`, the DLC set or the SDK patches change.
+Options: `--debug`, `--codegen-only`, `--force-codegen` (`python scripts\build.py --help` lists all). Codegen reruns automatically when the manifest, a `harmonyrecomp_*.toml`, the DLC set or the SDK patches change.
 
 ## Running
 
@@ -88,7 +90,7 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F2 | FPS counter |
 | F3 | SDK debug overlay (frame times) |
 | F4 | All SDK runtime settings |
-| F6 | Graphics menu ("Save" writes `harmonyrecomp.toml`) |
+| F6 | Graphics menu, including the frame rate limit ("Save" writes `harmonyrecomp.toml`) |
 | `^` | Log console |
 
 Logs are written to `logs\` next to the exe. If the game crashes, a `crash_*.txt` appears there as well; please attach it (and the matching log) to bug reports. The build also writes `harmonyrecomp.map`, which turns the addresses in a crash report into function names.
@@ -106,7 +108,7 @@ On the Xbox 360 the game's co-op (up to six players) only works over Xbox Live. 
 1. **Set up a virtual LAN.** Everybody joins the same network:
    - **Radmin VPN** or **ZeroTier**: lobbies are found automatically.
    - **Tailscale**: does not forward broadcasts; put each other's Tailscale IP into `netplay_peers`.
-2. **Everybody builds the project** with their own copy of the game. All players should use the same version of this repository.
+2. **Everybody installs the game** (setup or own build) with their own copy. All players should use the same release and the same game version (all with or all without the title update).
 3. **Settings** in `harmonyrecomp.toml` next to the exe:
 
    ```toml
@@ -144,7 +146,7 @@ Notes:
 - The title update can also be used without DLC. To build version 1.04 although the update is in `dlc\`, set `HARMONYRECOMP_TITLE_UPDATE=0`.
 - For online co-op, all players should use the same version (all with or all without the title update).
 
-Tested with all 12 DLC packages: characters and the Dracula's Castle stage work. If something crashes, please open an issue with the log and the crash report from `logs\`.
+Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion and Getu-Fuma stages, also one after another. The 13th, the Lord of Flies stage, builds as well. If something crashes, please open an issue with the log and the crash report from `logs\`.
 
 ## Project layout
 
@@ -159,6 +161,10 @@ Tested with all 12 DLC packages: characters and the Dracula's Castle stage work.
 | `src/netplay/` | Online co-op: Live replacement, sessions, lobby service, game sockets |
 | `scripts/build.py` | Complete build, including the SDK patches |
 | `scripts/extract_game.py` | STFS package extractor (game and DLC) |
+| `scripts/portable_msvc.py` | Downloads Microsoft's C++ headers, libraries and the Windows SDK for PCs without Visual Studio |
+| `scripts/package_release.py` | Builds the release downloads the setup uses |
+| `installer/` | The setup program (`HarmonyRecomp-Setup.exe`) |
+| `.github/workflows/release.yml` | Builds and checks every release |
 | `sdk-pin.txt` | SDK commit the project is tested with |
 
 ## Technical notes
@@ -167,16 +173,20 @@ Tested with all 12 DLC packages: characters and the Dracula's Castle stage work.
 - Character modules are XEX DLLs in `data\player_dll\` with fixed load addresses (Alucard `0x83000000`, Soma `0x83090000`, Jonathan `0x83120000`, Charlotte `0x831B0000`, Shanoa `0x83240000`, Axe Armor `0x83510000`).
 - Every recompiled module has an indirect-call table in guest memory, normally right behind its image. The main table (~13 MB) would cover the character load addresses, so it lives at `0x8C000000`; the DLL modules' tables follow from `0x8D000000`. This needs the relocatable-table patches in `build.py`.
 - `sub_8277ECF0` uses a byte jump table without bounds check; its 16 real entries are listed in `harmonyrecomp_config.toml`.
-- SDK patches in `build.py` (applied automatically): switch tables in the function scanner, relocatable function tables, readable message box text, settings file escaping, stale handles cached in guest dispatcher headers (a crash source in online sessions), DLL modules that share a load address (the DLC bosses all load at `0x8BF00000`), functions only referenced from data tables in DLL modules, title update patches during codegen on Windows, and unloading recompiled DLLs by their resolved path (otherwise replaying a DLC stage crashes).
+- SDK patches in `build.py` (applied automatically): switch tables in the function scanner, relocatable function tables, readable message box text, settings file escaping, stale handles cached in guest dispatcher headers (a crash source in online sessions), DLL modules that share a load address (the DLC bosses all load at `0x8BF00000`), functions only referenced from data tables in DLL modules, title update patches during codegen on Windows, unloading recompiled DLLs by their resolved path (otherwise replaying a DLC stage crashes), shutting down the input drivers before the window (otherwise closing the game corrupted the heap), a frame counter that counts only frames, and a configurable frame rate (`vsync_rate`).
 - Title update 2 replaces the whole executable (nearly every function moved by about `+0x1C000`). Its config was rebuilt by instruction matching and by the same pointer/thunk scan that reproduces the 1.04 lists. The game reads the updated data from `update:`, which points to `assets` as well.
 - DLC: about 100 code modules with fixed load addresses between `0x83000000` and `0x8BF80000`. Their indirect-call tables are packed by size from `0x8D000000` (see `CMakeLists.txt`).
+- The game's frame clock is the guest vblank, made by a host thread that sleeps 1 ms at a time. The game sets Windows' timer resolution to 1 ms at start; with the default 15.6 ms the vblanks came in bursts and the game often ran at 30 FPS. The game measures time itself, so a higher frame rate limit is smoother, not faster.
 - The netplay layer keeps the game's sockets in its own handle table and implements overlapped `WSARecvFrom`/`WSASendTo`/`WSAGetOverlappedResult`, which the SDK only stubs.
 
 ## Known issues
 
-- Closing the game sometimes ends with a crash report (heap corruption during runtime shutdown). The game has saved by then; it does not affect playing.
 - With DLC, leaving a stage logs `BaseHeap::Release failed` once per unloaded module (a double release in the SDK, harmless).
 - Not every DLC stage has been played yet.
+
+## Planned
+
+Next steps, roughly in this order: more testing of every DLC stage and of co-op with the title update, settings in the game instead of `harmonyrecomp.toml`, online play without a VPN (room codes and public lobbies), widescreen and Linux/Steam Deck, and later mod support.
 
 ## Credits
 
