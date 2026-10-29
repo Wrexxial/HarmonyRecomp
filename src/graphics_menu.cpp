@@ -167,13 +167,40 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
 
   ImGui::TextDisabled("Applies immediately");
   bool vsync = GetBool("vsync");
-  // The SDK's "vsync" drives the game's own 60 Hz frame clock (guest vblank),
-  // so it is the frame rate lock: off, the game runs as fast as it can.
-  if (ImGui::Checkbox("60 FPS lock (VSync)", &vsync)) {
-    SetBool("vsync", vsync);
-  }
-  if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Keeps the game at 60 FPS like on the Xbox 360. Leave it on.");
+  // The SDK's "vsync" drives the game's own frame clock (guest vblank) and
+  // vsync_rate its rate (SDK change 13): that is the frame rate limit. The
+  // game measures time itself, so a higher limit is smoother, not faster.
+  {
+    const std::string rate = Get("vsync_rate");
+    const char* current = !vsync                       ? "Unlocked"
+                          : (rate == "0" || rate == "60") ? "60 FPS"
+                          : rate == "90"                  ? "90 FPS"
+                          : rate == "120"                 ? "120 FPS"
+                          : rate == "144"                 ? "144 FPS"
+                                                          : "Custom";
+    constexpr Choice kRates[] = {
+        {"60 FPS", "60"}, {"90 FPS", "90"}, {"120 FPS", "120"}, {"144 FPS", "144"}, {"Unlocked", ""},
+    };
+    if (ImGui::BeginCombo("Frame rate limit", current)) {
+      for (const auto& choice : kRates) {
+        const bool selected = std::string_view(current) == choice.label;
+        if (ImGui::Selectable(choice.label, selected)) {
+          const bool unlocked = choice.value[0] == '\0';
+          SetBool("vsync", !unlocked);
+          if (!unlocked) {
+            Set("vsync_rate", choice.value);
+          }
+        }
+        if (selected) {
+          ImGui::SetItemDefaultFocus();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("60 FPS is the Xbox 360's rate. Higher limits are smoother on fast\n"
+                        "monitors; the game speed stays the same. Unlocked: as fast as possible.");
+    }
   }
   bool fps = ShowFps();
   if (ImGui::Checkbox("FPS counter (F2)", &fps) && toggle_fps_) {

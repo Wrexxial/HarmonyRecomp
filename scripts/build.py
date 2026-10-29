@@ -1097,6 +1097,34 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 13: frame rate limit other than 60 Hz.
+#
+# The game's frame clock is the guest vblank, made by a host thread at the
+# video mode's 60 Hz while "vsync" is on (every 1 ms when off). The game
+# measures time itself, so faster vblanks only mean more frames, not a faster
+# game (tested). vsync_rate sets that rate (0 = the video mode's 60 Hz) for
+# the F6 menu's 60/90/120/144/unlocked choice; it applies immediately.
+SDK_PATCHES += [
+    (
+        "src/graphics/graphics_system.cpp",
+        'REXCVAR_DEFINE_STRING(trace_gpu_prefix, "", "GPU", "GPU trace file prefix");\n',
+        'REXCVAR_DEFINE_STRING(trace_gpu_prefix, "", "GPU", "GPU trace file prefix");\n'
+        'REXCVAR_DEFINE_INT32(vsync_rate, 0, "GPU",\n'
+        '                     "Frame rate limit in Hz while vsync is on (0 = the video mode\'s, 60)");\n',
+    ),
+    (
+        "src/graphics/graphics_system.cpp",
+        "          uint64_t interval_ticks =\n"
+        "              REXCVAR_GET(vsync) ? vsync_interval_ticks : no_vsync_interval_ticks;\n",
+        "          const int32_t rate = REXCVAR_GET(vsync_rate);\n"
+        "          const uint64_t rate_ticks =\n"
+        "              rate > 0 ? std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / rate))\n"
+        "                       : vsync_interval_ticks;\n"
+        "          uint64_t interval_ticks = REXCVAR_GET(vsync) ? rate_ticks : no_vsync_interval_ticks;\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
