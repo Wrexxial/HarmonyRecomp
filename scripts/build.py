@@ -1068,6 +1068,35 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 12: a frame counter that counts frames (GitHub issue #11).
+#
+# CommandProcessor::counter() goes up on every guest vblank AND on every
+# buffer swap (it is the value the game reads back as the GPU counter), so the
+# FPS counter showed 60 + the real frame rate: 120 at a smooth 60 FPS, 90 when
+# the game actually ran at 30. swap_count() counts the swaps alone.
+SDK_PATCHES += [
+    (
+        "include/rex/graphics/command_processor.h",
+        "  uint32_t counter() const { return counter_; }\n",
+        "  uint32_t counter() const { return counter_; }\n"
+        "  // Buffer swaps (frames the game presented); counter() also counts vblanks.\n"
+        "  uint32_t swap_count() const { return swap_count_; }\n",
+    ),
+    (
+        "include/rex/graphics/command_processor.h",
+        "  uint32_t counter_ = 0;\n",
+        "  uint32_t counter_ = 0;\n"
+        "  uint32_t swap_count_ = 0;\n",
+    ),
+    (
+        "src/graphics/command_processor.cpp",
+        "  IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);\n\n  ++counter_;\n",
+        "  IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);\n\n  ++counter_;\n"
+        "  ++swap_count_;\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:

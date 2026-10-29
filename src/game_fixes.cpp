@@ -12,6 +12,17 @@
 #include <rex/system/function_dispatcher.h>
 #include <rex/system/xmemory.h>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <timeapi.h>
+#endif
+
 namespace harmony {
 namespace {
 
@@ -62,6 +73,12 @@ void InstallGameFixes(rex::Runtime* runtime) {
   if (!pure_call || !dispatcher->SetFunction(pure_call, &PureCallGuard)) {
     REXLOG_WARN("[fix] could not install the _purecall guard");
   }
+}
+
+void RaiseTimerResolution() {
+#if defined(_WIN32)
+  timeBeginPeriod(1);
+#endif
 }
 
 }  // namespace harmony

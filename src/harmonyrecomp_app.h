@@ -22,6 +22,7 @@
 #include <rex/system/flags.h>
 #include <rex/ui/keybinds.h>
 
+
 #include "crash_log.h"
 #include "dlc.h"
 #include "game_fixes.h"
@@ -46,6 +47,7 @@ class HarmonyrecompApp : public rex::ReXApp {
   // would never be used; read it here ourselves, then fall back to the
   // project's assets folder relative to the exe.
   void OnConfigurePaths(rex::PathConfig& paths) override {
+    harmony::RaiseTimerResolution();
     config_path_ = paths.config_path;
     FindGameDataRoot(paths);
     // With title update 2 the game reads its updated files from the update:
@@ -191,12 +193,13 @@ class HarmonyrecompApp : public rex::ReXApp {
     }
   }
 
-  // Guest frames = the game's buffer swaps, counted by the GPU command processor.
+  // Guest frames = the game's buffer swaps (swap_count, SDK change 12; counter()
+  // would add the 60 vblanks per second).
   uint32_t GuestFrameCount() const {
     auto* gs = static_cast<rex::graphics::GraphicsSystem*>(runtime() ? runtime()->graphics_system()
                                                                       : nullptr);
     auto* cp = gs ? gs->command_processor() : nullptr;
-    return cp ? cp->counter() : 0;
+    return cp ? cp->swap_count() : 0;
   }
 
   std::filesystem::path config_path_;
