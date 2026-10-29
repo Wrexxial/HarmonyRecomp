@@ -167,8 +167,13 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
 
   ImGui::TextDisabled("Applies immediately");
   bool vsync = GetBool("vsync");
-  if (ImGui::Checkbox("VSync", &vsync)) {
+  // The SDK's "vsync" drives the game's own 60 Hz frame clock (guest vblank),
+  // so it is the frame rate lock: off, the game runs as fast as it can.
+  if (ImGui::Checkbox("60 FPS lock (VSync)", &vsync)) {
     SetBool("vsync", vsync);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Keeps the game at 60 FPS like on the Xbox 360. Leave it on.");
   }
   bool fps = ShowFps();
   if (ImGui::Checkbox("FPS counter (F2)", &fps) && toggle_fps_) {

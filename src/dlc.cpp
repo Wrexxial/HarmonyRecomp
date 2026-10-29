@@ -116,6 +116,20 @@ void InstallDlcPackages(rex::Runtime* runtime) {
   if (!have_list) {
     REXLOG_WARN("[dlc] dlc_packages.txt missing next to the exe; no DLC is installed");
   }
+  // Installed earlier (by an older build, or with DLC that is no longer part
+  // of this build) but not recompiled now: remove, or the game finds it and
+  // crashes loading its code. The packages themselves stay in the DLC folder.
+  for (const auto& data : content->ListContent(1, 0, rex::system::XContentType::kMarketplaceContent,
+                                               kTitleId)) {
+    const auto name = data.file_name();
+    if (built.count(name)) continue;
+    if (content->DeleteContent(0, data) == 0) {
+      REXLOG_WARN("[dlc] {} was not part of this build; removed its installed copy", name);
+    } else {
+      REXLOG_WARN("[dlc] {} is installed but not part of this build and could not be removed", name);
+    }
+  }
+
   for (const auto& folder : DlcFolders(runtime->game_data_root())) {
     std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(folder, ec)) {
@@ -134,13 +148,8 @@ void InstallDlcPackages(rex::Runtime* runtime) {
       }
       auto data = ContentData(name);
       if (!built.count(name)) {
-        // Its code was not recompiled: the game would crash loading it.
-        if (content->ContentExists(0, data) && content->DeleteContent(0, data) == 0) {
-          REXLOG_WARN("[dlc] {} was not part of the build; removed its installed copy", name);
-        } else {
-          REXLOG_WARN("[dlc] {} was not part of the build; run the build (or the setup) "
-                      "again with it in the DLC folder", name);
-        }
+        REXLOG_WARN("[dlc] {} was not part of the build; run the build (or the setup) "
+                    "again with it in the DLC folder", name);
         continue;
       }
       if (content->ContentExists(0, data)) {

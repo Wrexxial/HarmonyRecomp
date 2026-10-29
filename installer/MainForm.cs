@@ -464,6 +464,9 @@ namespace HarmonyRecompSetup
     /// <summary>Asks to accept Microsoft's license for the C++ build components.</summary>
     sealed class LicenseDialog : Form
     {
+        // Laid out by a table that sizes itself and the window to its content,
+        // so the buttons stay visible at any display scaling (125%, 150%, ...).
+        // A fixed window size cut them off below the frame (GitHub issue #7).
         public LicenseDialog(string url)
         {
             Text = "Microsoft C++ build components";
@@ -472,27 +475,39 @@ namespace HarmonyRecompSetup
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(520, 230);
-            Padding = new Padding(16);
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Padding = new Padding(12);
 
+            int width = LogicalToDeviceUnits(480);
+            var layout = new TableLayoutPanel
+            {
+                ColumnCount = 1, RowCount = 3, AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill,
+            };
             var text = new Label
             {
                 Text = "Compiling the game needs Microsoft's C/C++ runtime headers and libraries and the Windows SDK. " +
                        "They are not installed on this PC (they come with Visual Studio). The setup can download just " +
                        "these parts (about 400 MB) directly from Microsoft.\r\n\r\n" +
                        "They are licensed by Microsoft under the Visual Studio Build Tools license:",
-                AutoSize = true, MaximumSize = new Size(488, 0), Dock = DockStyle.Top,
+                AutoSize = true, MaximumSize = new Size(width, 0),
             };
-            var link = new LinkLabel { Text = url, AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 8, 0, 8) };
+            var link = new LinkLabel { Text = url, AutoSize = true, MaximumSize = new Size(width, 0), Margin = new Padding(3, 8, 3, 12) };
             link.LinkClicked += (s, e) => { try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { } };
-            var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Bottom, AutoSize = true };
+            var buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.RightToLeft, AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Right, WrapContents = false,
+            };
             var decline = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
             var accept = new Button { Text = "Accept and download", DialogResult = DialogResult.OK, AutoSize = true };
             buttons.Controls.Add(decline);
             buttons.Controls.Add(accept);
-            Controls.Add(link);
-            Controls.Add(text);
-            Controls.Add(buttons);
+            layout.Controls.Add(text, 0, 0);
+            layout.Controls.Add(link, 0, 1);
+            layout.Controls.Add(buttons, 0, 2);
+            Controls.Add(layout);
             AcceptButton = accept;
             CancelButton = decline;
         }

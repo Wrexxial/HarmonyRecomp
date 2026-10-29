@@ -225,6 +225,9 @@ namespace HarmonyRecompSetup
                     args.Add("--dlc-dir");
                     args.Add(options.DlcDir);
                 }
+                // Without Visual Studio the PC may lack the Visual C++ runtime:
+                // the game gets its own copy next to the exe.
+                if (!haveVs) args.Add("--app-local-runtime");
                 double buildStart = at;
                 int result = RunTool(python, args.ToArray(), src, env, line => BuildLine(line, buildStart));
                 if (result != 0)

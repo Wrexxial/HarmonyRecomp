@@ -40,6 +40,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -310,8 +311,11 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
     # The DLC needs the updated executable: its modules use interfaces that
     # version 1.04 calls differently (crash at the title screen without it).
     if included and not update:
-        print("      warning: DLC without the title update (000B0000 package) will crash the "
-              "game; put the title update into the DLC folder too")
+        # Built anyway, the game would crash at the title screen; without the
+        # DLC it works, so leave it out and say why.
+        print("      warning: the DLC needs the title update (the 000B0000 package from your "
+              "console). It is not in the DLC folder, so the DLC is left out of this build.")
+        included, modules = [], []
 
     DLC_LIST.parent.mkdir(parents=True, exist_ok=True)
     DLC_LIST.write_text("".join(name + "\n" for name in included))
@@ -1204,6 +1208,24 @@ def run_codegen(tool: Path) -> tuple[int, str]:
     return proc.wait(), "".join(lines)
 
 
+# Windows status codes of a program that could not start at all.
+START_FAILURES = {
+    0xC0000135: "a DLL it needs was not found",
+    0xC0000142: "a DLL it needs failed to initialize",
+    0xC000007B: "a DLL it needs is for the wrong architecture",
+}
+
+
+def codegen_failed(code: int) -> None:
+    status = code & 0xFFFFFFFF
+    if status in START_FAILURES:
+        sys.exit(f"error: the rexglue tool could not start ({START_FAILURES[status]}, "
+                 f"0x{status:08X}). Usually the Microsoft Visual C++ Redistributable is missing "
+                 "or old: install the latest x64 version from "
+                 "https://aka.ms/vs/17/release/vc_redist.x64.exe and run the build again.")
+    sys.exit(f"error: codegen failed with exit code {code}")
+
+
 def dlc_package_of_module(name: str) -> str | None:
     """DLC package (file name) a failed module belongs to, from the manifest."""
     text = active_manifest().read_text(encoding="utf-8") if LOCAL_MANIFEST.exists() else ""
@@ -1240,10 +1262,10 @@ def step_codegen(tool: Path, force: bool, dlc_dir: Path | None, game: Path | Non
         failed = re.findall(r"Analysis failed for '([^']+)'", output)
         packages = {dlc_package_of_module(name) for name in failed}
         if not failed or None in packages:
-            sys.exit(f"error: codegen failed with exit code {code}")
+            codegen_failed(code)
         skipped = read_skipped()
         if packages <= skipped:
-            sys.exit(f"error: codegen failed with exit code {code}")
+            codegen_failed(code)
         skipped |= packages
         write_skipped(skipped)
         for package in sorted(packages):
@@ -1254,10 +1276,37 @@ def step_codegen(tool: Path, force: bool, dlc_dir: Path | None, game: Path | Non
     CODEGEN_STAMP.write_text(codegen_inputs_hash() + "\n")
 
 
+def fix_future_mtimes(*folders: Path) -> None:
+    """Set file times that lie in the future to now.
+
+    CMake re-runs whenever an input is newer than its build files; an input
+    dated in the future (unpacked from an archive made in another time zone,
+    or a wrong clock) makes it re-run forever: "build.ninja still dirty after
+    100 tries"."""
+    now = time.time()
+    fixed = 0
+    for folder in folders:
+        if not folder.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(folder):
+            dirnames[:] = [d for d in dirnames if d not in (".git", "out", "generated", "assets")]
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                try:
+                    if os.stat(path).st_mtime > now + 60:
+                        os.utime(path, (now, now))
+                        fixed += 1
+                except OSError:
+                    pass
+    if fixed:
+        print(f"      reset {fixed} file time(s) that were in the future")
+
+
 def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Path:
     preset = f"{pid}-{config.lower()}"
     print(f"[5/5] Building the game ({preset})")
     progress("compile")
+    fix_future_mtimes(ROOT, prefix)
     run(["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}"], cwd=ROOT)
     build = ["cmake", "--build", f"out/build/{preset}"]
     if jobs:
@@ -1279,7 +1328,14 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
 RUNTIME_FILES = ("*.exe", "*.dll", "*.map")
 
 
-def step_install(out_dir: Path, target: Path, dlc_dir: Path | None) -> None:
+# Microsoft's C++ runtime, shipped in the prebuilt SDK's bin/ (package_release.py).
+VC_RUNTIME = ("msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atomic_wait.dll",
+              "msvcp140_codecvt_ids.dll", "vcruntime140.dll", "vcruntime140_1.dll",
+              "concrt140.dll")
+
+
+def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
+                 runtime_dir: Path | None = None) -> None:
     """Put the playable game into target: executable, modules, settings, the
     extracted game data and the DLC packages (installed at first start)."""
     print(f"[6/6] Installing into {target}")
@@ -1288,6 +1344,14 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None) -> None:
     for pattern in RUNTIME_FILES:
         for src in out_dir.glob(pattern):
             shutil.copy2(src, target / src.name)
+    if runtime_dir:
+        # Built with the portable Microsoft components: the PC may have no (or
+        # an old) Visual C++ Redistributable, so the runtime goes next to the exe.
+        copied = [n for n in VC_RUNTIME if (runtime_dir / n).is_file()]
+        for name in copied:
+            shutil.copy2(runtime_dir / name, target / name)
+        if copied:
+            print(f"      C++ runtime next to the exe: {', '.join(copied)}")
     settings = target / "harmonyrecomp.toml"
     if not settings.exists():  # keep the player's settings on updates
         shutil.copy2(out_dir / "harmonyrecomp.toml", settings)
@@ -1320,6 +1384,8 @@ def main() -> int:
     parser.add_argument("--sdk-only", action="store_true", help="build the SDK, then stop")
     parser.add_argument("--install-to", type=Path, help="put the playable game into this folder")
     parser.add_argument("--jobs", type=int, help="parallel compile jobs")
+    parser.add_argument("--app-local-runtime", action="store_true",
+                        help="copy the C++ runtime from the SDK's bin/ next to the installed exe")
     args = parser.parse_args()
 
     pid = platform_id()
@@ -1352,7 +1418,8 @@ def main() -> int:
         return 0
     out_dir = step_build_game(pid, config, prefix, args.jobs)
     if args.install_to:
-        step_install(out_dir, args.install_to.resolve(), args.dlc_dir)
+        runtime_dir = tool.parent if args.app_local_runtime else None
+        step_install(out_dir, args.install_to.resolve(), args.dlc_dir, runtime_dir)
     progress("done")
     return 0
 

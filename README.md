@@ -33,6 +33,8 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 4. Click **Install** and wait. The setup downloads the build tools (about 1 GB), and if Visual Studio is not installed, Microsoft's C++ components (about 400 MB, you are asked to accept Microsoft's license). Then your PC translates and compiles the game: **10 to 30 minutes** once, depending on your CPU. About 10 GB of free disk space are needed while it runs, about 1 GB afterwards.
 5. Click **Play**, or use the desktop shortcut.
 
+If the setup stops with "the rexglue tool could not start", install the latest [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) and run it again.
+
 Nothing of the game is downloaded: everything is built from your own copy on your own PC. To update, run the setup of a newer release; your settings and saves are kept. If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
 
 The rest of this page is for building by hand and for developers.
@@ -130,7 +132,7 @@ The log shows every step with `[netplay]`: the chosen address, lobbies found, Qo
 
 ## DLC
 
-The game's downloadable characters, stage packs and music packs are content packages, the files in `58410A7A/00000002/` of your console dump. They only work with **title update 2** (game version 2.04), the file in `58410A7A/000B0000/`: the DLC was built for the updated game, and version 1.04 crashes at the title screen as soon as DLC is installed. Use your own files:
+The game's downloadable characters, stage packs and music packs are content packages, the files in `58410A7A/00000002/` of your console dump. They only work with **title update 2** (game version 2.04), the file in `58410A7A/000B0000/`: the DLC was built for the updated game, and version 1.04 crashes at the title screen as soon as DLC is installed. Without the title update the build therefore leaves the DLC out (with a warning). Use your own files:
 
 1. Copy the DLC packages **and** the title update file into `dlc\` in the project folder (with the setup: into the folder you select as DLC folder).
 2. Run `python scripts\build.py`. It applies the title update over `assets\`, unpacks the DLC into `assets\dlc\` and recompiles the code modules in it (characters, enemies, bosses, projectiles: about 100 modules with all DLC). This makes the build noticeably longer.

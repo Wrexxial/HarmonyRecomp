@@ -89,8 +89,14 @@ jobs:
         run: |
           set -euo pipefail
           SDK="$(cygpath -w "$(cd .. && pwd)/rexglue-sdk/out/install/win-amd64")"
+          # Microsoft's C++ runtime DLLs from the runner's Visual Studio, shipped
+          # app-local next to rexglue.exe and the game (see package_release.py).
+          VS="$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath)"
+          VCRT="$(ls -d "$(cygpath -u "$VS")"/VC/Redist/MSVC/[0-9]*/x64/Microsoft.VC14*.CRT | sort -V | tail -1)"
+          echo "C++ runtime: $VCRT"
+          ls "$VCRT"
           ls "$SDK" | tee "$RUNNER_TEMP/logs/sdk-install.log"
-          python scripts/package_release.py --out dist --sdk "$SDK" \
+          python scripts/package_release.py --out dist --sdk "$SDK" --vc-runtime "$(cygpath -w "$VCRT")" \
             --python-embed "$RUNNER_TEMP/python-embed.zip" \
             --llvm "$RUNNER_TEMP/llvm" --cmake "$RUNNER_TEMP/cmake" --ninja "$RUNNER_TEMP/ninja/ninja.exe" \
             2>&1 | tee "$RUNNER_TEMP/logs/package.log"
