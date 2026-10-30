@@ -31,6 +31,8 @@ class FpsCounterDialog final : public rex::ui::ImGuiDialog {
  public:
   using FrameCounter = std::function<uint32_t()>;
   FpsCounterDialog(rex::ui::ImGuiDrawer* drawer, FrameCounter guest_frames);
+  // Display only: keyboard/mouse mode keeps the mouse (SDK change 14).
+  bool WantsMouse() const override { return false; }
 
  protected:
   void OnDraw(ImGuiIO& io) override;

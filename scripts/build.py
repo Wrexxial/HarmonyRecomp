@@ -1141,6 +1141,74 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 14: keyboard/mouse mode keeps the mouse while a dialog is open.
+#
+# With mnk_mode on, the keyboard/mouse driver captures the mouse (hidden, held
+# in the window centre) whenever the game reads the controller. It only let go
+# for the SDK's own F3/F4/console overlays, so the profile and sign-in dialogs
+# (and the F6 menu) could not be clicked: the mouse was "held hostage in the
+# centre". Dialogs now say whether they need the mouse; while one that does is
+# open, the driver releases it and the game gets no keyboard/mouse input.
+SDK_PATCHES += [
+    (
+        "include/rex/ui/imgui_dialog.h",
+        "  void Draw();\n",
+        "  void Draw();\n"
+        "\n"
+        "  // Whether the mouse (and keyboard) belong to this dialog while it is open;\n"
+        "  // false for display-only overlays (FPS counter, frame times).\n"
+        "  virtual bool WantsMouse() const { return true; }\n",
+    ),
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "#include <cstddef>\n",
+        "#include <atomic>\n#include <cstddef>\n",
+    ),
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "  void AddDialog(ImGuiDialog* dialog);\n",
+        "  void AddDialog(ImGuiDialog* dialog);\n"
+        "  // True while a drawn dialog wants the mouse (updated every frame).\n"
+        "  bool HasMouseDialogs() const { return mouse_dialog_count_.load() > 0; }\n",
+    ),
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "  // All currently-attached dialogs that get drawn.\n",
+        "  std::atomic<int> mouse_dialog_count_{0};\n"
+        "  // All currently-attached dialogs that get drawn.\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  if (dialogs_.empty()) {\n    return;\n  }\n",
+        "  if (dialogs_.empty()) {\n    mouse_dialog_count_ = 0;\n    return;\n  }\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  dialog_loop_next_index_ = SIZE_MAX;\n\n  ImGui::Render();\n",
+        "  dialog_loop_next_index_ = SIZE_MAX;\n"
+        "  int mouse_dialogs = 0;\n"
+        "  for (auto* dialog : dialogs_) {\n"
+        "    mouse_dialogs += dialog->WantsMouse() ? 1 : 0;\n"
+        "  }\n"
+        "  mouse_dialog_count_ = mouse_dialogs;\n"
+        "\n  ImGui::Render();\n",
+    ),
+    (
+        "include/rex/ui/overlay/debug_overlay.h",
+        "  explicit DebugOverlayDialog(ImGuiDrawer* imgui_drawer, FrameStatsProvider stats_provider = {});\n",
+        "  explicit DebugOverlayDialog(ImGuiDrawer* imgui_drawer, FrameStatsProvider stats_provider = {});\n"
+        "  bool WantsMouse() const override { return false; }\n",
+    ),
+    (
+        "src/ui/rex_app.cpp",
+        "      input_sys->SetActiveCallback([this]() {\n",
+        "      input_sys->SetActiveCallback([this]() {\n"
+        "        if (imgui_drawer_->HasMouseDialogs())\n"
+        "          return false;\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
