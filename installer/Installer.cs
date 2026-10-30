@@ -297,14 +297,38 @@ namespace HarmonyRecompSetup
             Notify(start + weight * 0.9 * (total > 0 ? done / total : 0), status + " (" + m.Groups[1].Value + ")");
         }
 
+        // release.txt in a package names its release (scripts/package_release.py).
+        static string ZipReleaseTag(string zip)
+        {
+            try
+            {
+                using (var archive = ZipFile.OpenRead(zip))
+                {
+                    var entry = archive.GetEntry("release.txt");
+                    if (entry == null) return null;
+                    using (var reader = new StreamReader(entry.Open())) return reader.ReadToEnd().Trim();
+                }
+            }
+            catch (Exception) { return null; }
+        }
+
         string Obtain(string asset, string downloads, double start, double weight)
         {
-            // An asset next to the setup program is used as is (offline install).
+            // An asset next to the setup program is used as is (offline install),
+            // but a package only if it belongs to this setup's release: an old
+            // package left next to a newer setup would build the old version
+            // (GitHub issue #17). The toolchain does not depend on the release.
             string local = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, asset);
             if (File.Exists(local))
             {
-                Log("Using " + local);
-                return local;
+                string localTag = asset == PackageAsset ? ZipReleaseTag(local) : ReleaseTag;
+                if (localTag == ReleaseTag || ReleaseTag == "dev")  // dev: a local test build
+                {
+                    Log("Using " + local);
+                    return local;
+                }
+                Log("Ignoring " + local + " (it belongs to release " + (localTag ?? "unknown") +
+                    ", this setup is " + ReleaseTag + ")");
             }
             string target = Path.Combine(downloads, asset);
             string url = "https://github.com/" + RepoSlug + "/releases/download/" + ReleaseTag + "/" + asset;

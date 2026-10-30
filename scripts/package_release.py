@@ -66,10 +66,16 @@ def tracked_files() -> list[Path]:
     return [ROOT / name for name in out.decode("utf-8").split("\0") if name]
 
 
-def make_package(out: Path, sdk: Path, python_embed: Path, vc_runtime: Path | None) -> None:
+def make_package(out: Path, sdk: Path, python_embed: Path, vc_runtime: Path | None,
+                 tag: str | None) -> None:
     if not (sdk / "lib").is_dir():
         sys.exit(f"error: {sdk} does not look like an SDK install folder (no lib/)")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        if tag:
+            # The setup only uses a package lying next to it (offline install)
+            # when it belongs to the setup's own release.
+            info = zipfile.ZipInfo("release.txt", date_time=ZIP_DATE)
+            archive.writestr(info, tag + "\n")
         n = add_tree(archive, sdk, "sdk")
         print(f"  sdk: {n} files")
         if vc_runtime:
@@ -126,6 +132,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True, help="output folder")
     parser.add_argument("--sdk", type=Path, help="SDK install folder")
     parser.add_argument("--python-embed", type=Path, help="python-*-embed-amd64.zip")
+    parser.add_argument("--tag", help="release tag, recorded as release.txt in the package")
     parser.add_argument("--vc-runtime", type=Path,
                         help="folder with the Visual C++ runtime DLLs (Microsoft.VC143.CRT)")
     parser.add_argument("--llvm", type=Path, help="unpacked clang+llvm release")
@@ -137,7 +144,7 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     if args.sdk:
         make_package(args.out / "harmonyrecomp-package.zip", args.sdk, args.python_embed,
-                     args.vc_runtime)
+                     args.vc_runtime, args.tag)
     if args.llvm:
         make_toolchain(args.out / "harmonyrecomp-toolchain.zip", args.llvm, args.cmake, args.ninja,
                        windows=not args.linux_names)

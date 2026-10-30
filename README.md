@@ -152,7 +152,7 @@ The log shows every step with `[netplay]`: the chosen address, lobbies found, Qo
 
 The game's downloadable characters, stage packs and music packs are content packages, the files in `58410A7A/00000002/` of your console dump. They only work with **title update 2** (game version 2.04), the file in `58410A7A/000B0000/`: the DLC was built for the updated game, and version 1.04 crashes at the title screen as soon as DLC is installed. Without the title update the build therefore leaves the DLC out (with a warning). Use your own files:
 
-1. Copy the DLC packages **and** the title update file into `dlc\` in the project folder (with the setup: into the folder you select as DLC folder).
+1. Copy the DLC packages **and** the title update file into `dlc\` in the project folder (with the setup: into the folder you select as DLC folder). If you select the `00000002` folder of a console dump in the setup, the title update in the neighbouring `000B0000` folder is found automatically.
 2. Run `python scripts\build.py`. It applies the title update over `assets\`, unpacks the DLC into `assets\dlc\` and recompiles the code modules in it (characters, enemies, bosses, projectiles: about 100 modules with all DLC). This makes the build noticeably longer.
 3. Start the game. On the first start the packages are installed into the runtime's content folder (this takes a moment); the log shows `[dlc] installed ...`.
 

@@ -302,6 +302,22 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
         print(f"      DLC: {label} ({count} code modules)")
         included.append(package_path.name)
 
+    # A console dump keeps the title update next to the DLC and the game, in
+    # 58410A7A/000B0000/: look there too, so the DLC folder (00000002) can be
+    # selected as it is (GitHub issue #17).
+    if not updates and included:
+        near = [dlc_dir.parent / "000B0000"]
+        if game:
+            near.append(Path(game).parent.parent / "000B0000")
+        for folder in dict.fromkeys(f.resolve() for f in near if f.is_dir()):
+            for path in package_files(folder):
+                try:
+                    package = extract_game.Package(path)
+                except (OSError, RuntimeError):
+                    continue
+                if package.title_id == TITLE_ID and package.content_type == CONTENT_TYPE_TITLE_UPDATE:
+                    print(f"      title update found next to the DLC: {path}")
+                    updates.append((path.stat().st_size, path))
     # Several title updates: the newest is the biggest one (they are cumulative).
     update = max(updates)[1] if updates else None
     if update and not TITLE_UPDATE_SUPPORTED:

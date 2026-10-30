@@ -97,6 +97,7 @@ jobs:
           ls "$VCRT"
           ls "$SDK" | tee "$RUNNER_TEMP/logs/sdk-install.log"
           python scripts/package_release.py --out dist --sdk "$SDK" --vc-runtime "$(cygpath -w "$VCRT")" \
+            --tag "${{ steps.tag.outputs.tag }}" \
             --python-embed "$RUNNER_TEMP/python-embed.zip" \
             --llvm "$RUNNER_TEMP/llvm" --cmake "$RUNNER_TEMP/cmake" --ninja "$RUNNER_TEMP/ninja/ninja.exe" \
             2>&1 | tee "$RUNNER_TEMP/logs/package.log"
