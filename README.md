@@ -33,6 +33,8 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 4. Click **Install** and wait. The setup downloads the build tools (about 1 GB), and if Visual Studio is not installed, Microsoft's C++ components (about 400 MB, you are asked to accept Microsoft's license). Then your PC translates and compiles the game: **10 to 30 minutes** once, depending on your CPU. About 10 GB of free disk space are needed while it runs, about 1 GB afterwards.
 5. Click **Play**, or use the desktop shortcut.
 
+If the game runs at 30 FPS or stutters, check that no frame rate limit is set for it in the NVIDIA Control Panel ("Max Frame Rate") or similar driver tools: together with G-SYNC such a limit can halve the game's frame rate. Use the frame rate limit in the F6 menu instead.
+
 If the setup stops with "the rexglue tool could not start", install the latest [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) and run it again.
 
 Nothing of the game is downloaded: everything is built from your own copy on your own PC.
