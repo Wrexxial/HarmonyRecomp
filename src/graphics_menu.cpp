@@ -71,6 +71,12 @@ constexpr Choice kScale[] = {
     {"2x (2560x1440)", "2"},
     {"3x (3840x2160)", "3"},
 };
+// user_language: XLanguage ids. The game picks its text and voice language
+// from it at startup (SDK change 22).
+constexpr Choice kLanguages[] = {
+    {"English", "1"}, {"Japanese", "2"}, {"German", "3"},
+    {"French", "4"},  {"Spanish", "5"},  {"Italian", "6"},
+};
 constexpr Choice kAntiAlias[] = {
     {"Off", "none"},
     {"FXAA", "fxaa"},
@@ -143,7 +149,8 @@ GraphicsMenuDialog::GraphicsMenuDialog(rex::ui::ImGuiDrawer* drawer,
       toggle_fps_(std::move(toggle_fps)),
       start_scale_(Get("resolution_scale")),
       start_aa_(Get("swap_post_effect")),
-      start_fullscreen_(Get("fullscreen")) {}
+      start_fullscreen_(Get("fullscreen")),
+      start_language_(Get("user_language")) {}
 
 void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
@@ -253,6 +260,12 @@ void GraphicsMenuDialog::DrawGraphics() {
     SetBool("fullscreen", fullscreen);
   }
   RestartHint(start_fullscreen_, "fullscreen");
+  ComboSetting("Language", "user_language", kLanguages);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Language of the game's text and voices, like the Xbox 360's\n"
+                      "system language.");
+  }
+  RestartHint(start_language_, "user_language");
 }
 
 }  // namespace harmony

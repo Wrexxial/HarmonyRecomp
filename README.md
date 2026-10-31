@@ -116,6 +116,12 @@ Keyboard and mouse are off by default; switch them on in F6 > Controls > Keyboar
 
 Every key can be changed in F6 > Controls > Keyboard & mouse: click the key, then press the new key or mouse button. In the file they are `keybind_a = "J"`, `keybind_start = "Return"`, ...
 
+### Saves and language
+
+Save data is stored in `Documents\harmonyrecomp\B13EBABEBABEBABE\58410A7A\00000001\dchd_savedata\` (back up this folder to keep your progress). Saves from an Xbox 360 are STFS packages; extracting their files (e.g. with Horizon or Velocity) into this folder might work but is untested, the game may check that the save belongs to the profile.
+
+The game's language (text and voices) follows the Xbox 360 system language: F6 > Graphics > Language, then restart (`user_language` in `harmonyrecomp.toml`: 1 English, 2 Japanese, 3 German, 4 French, 5 Spanish, 6 Italian).
+
 Logs are written to `logs\` next to the exe. If the game crashes, a `crash_*.txt` appears there as well; please attach it (and the matching log) to bug reports. The build also writes `harmonyrecomp.map`, which turns the addresses in a crash report into function names.
 
 ## Online co-op

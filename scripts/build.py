@@ -1705,6 +1705,32 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 22: the game's language follows the user_language setting (#19).
+#
+# XGetLanguage always answered English (a Xenia TODO), so games that ask it
+# ignored user_language, which XConfig already reports. It now returns the
+# setting (1 English, 2 Japanese, 3 German, 4 French, 5 Spanish, 6 Italian,
+# ...), falling back to the old region rule for invalid values.
+SDK_PATCHES += [
+    (
+        "src/kernel/xam/xam_info.cpp",
+        "u32 XGetLanguage_entry() {\n  auto desired_language = XLanguage::kEnglish;\n",
+        "u32 XGetLanguage_entry() {\n"
+        "  // The user_language setting decides (XConfig reports the same value).\n"
+        "  const uint32_t configured = REXCVAR_GET(user_language);\n"
+        "  if (configured > 0 && configured < uint32_t(XLanguage::kMaxLanguages)) {\n"
+        "    return configured;\n"
+        "  }\n"
+        "  auto desired_language = XLanguage::kEnglish;\n",
+    ),
+    (
+        "src/kernel/xam/xam_info.cpp",
+        "#include <rex/system/kernel_state.h>\n",
+        "#include <rex/system/flags.h>\n#include <rex/system/kernel_state.h>\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
