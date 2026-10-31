@@ -1232,6 +1232,229 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 16: controller support in the SDK's own dialogs (#18).
+#
+# System dialogs ("create a new save?", sign-in, text entry) and the F-key
+# menus could only be used with mouse and keyboard. While a dialog that takes
+# input is open, the game gets no controller input (change 14), so a player on
+# a controller was stuck. Dialogs now get Dear ImGui's gamepad navigation:
+# D-pad/left stick move between buttons, A presses, B goes back, LB/RB switch
+# tabs. The controller is read through a separate path that does not change
+# what the game sees once the dialog closes. Message boxes also start on the
+# game's default button instead of the first one.
+SDK_PATCHES += [
+    (
+        "include/rex/input/input_driver.h",
+        "  virtual void OnWindowAvailable(rex::ui::Window* /*window*/) {}\n",
+        "  virtual void OnWindowAvailable(rex::ui::Window* /*window*/) {}\n"
+        "\n"
+        "  // Controller state for the SDK's own dialogs: read even while the game's\n"
+        "  // input is paused, without changing what the game sees afterwards.\n"
+        "  virtual X_RESULT GetStateForUI(uint32_t /*user_index*/, X_INPUT_STATE* /*out_state*/) {\n"
+        "    return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "  }\n",
+    ),
+    (
+        "include/rex/input/sdl/sdl_input_driver.h",
+        "  void OnWindowAvailable(rex::ui::Window* window) override;\n",
+        "  void OnWindowAvailable(rex::ui::Window* window) override;\n"
+        "  X_RESULT GetStateForUI(uint32_t user_index, X_INPUT_STATE* out_state) override;\n",
+    ),
+    (
+        "src/input/sdl/sdl_input_driver.cpp",
+        "X_RESULT SDLInputDriver::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {\n",
+        "X_RESULT SDLInputDriver::GetStateForUI(uint32_t user_index, X_INPUT_STATE* out_state) {\n"
+        "  if (!sdl_events_initialized_ || !SDL_Gamepad_initialized_ ||\n"
+        "      user_index >= HID_SDL_USER_COUNT) {\n"
+        "    return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "  }\n"
+        "  QueueControllerUpdate();\n"
+        "  auto guard = DrainAndLock();\n"
+        "  auto controller = GetControllerState(user_index);\n"
+        "  if (!controller) {\n"
+        "    return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "  }\n"
+        "  // Leave packet_number/state_changed alone: they belong to the game.\n"
+        "  std::memcpy(out_state, &controller->state, sizeof(*out_state));\n"
+        "  return X_ERROR_SUCCESS;\n"
+        "}\n"
+        "\n"
+        "X_RESULT SDLInputDriver::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {\n",
+    ),
+    (
+        "include/rex/input/xinput/xinput_input_driver.h",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) override;\n",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) override;\n"
+        "  X_RESULT GetStateForUI(uint32_t user_index, X_INPUT_STATE* out_state) override {\n"
+        "    return GetState(user_index, out_state);\n"
+        "  }\n",
+    ),
+    (
+        "include/rex/input/input_system.h",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state);\n",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state);\n"
+        "  // All drivers' controllers for user_index, for the SDK's dialogs.\n"
+        "  bool GetStateForUI(uint32_t user_index, X_INPUT_GAMEPAD* out_gamepad);\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration) {\n",
+        "bool InputSystem::GetStateForUI(uint32_t user_index, X_INPUT_GAMEPAD* out_gamepad) {\n"
+        "  bool connected = false;\n"
+        "  uint16_t buttons = 0;\n"
+        "  int16_t lx = 0, ly = 0;\n"
+        "  for (auto& driver : drivers_) {\n"
+        "    X_INPUT_STATE state = {};\n"
+        "    if (driver->GetStateForUI(user_index, &state) != X_ERROR_SUCCESS) {\n"
+        "      continue;\n"
+        "    }\n"
+        "    connected = true;\n"
+        "    buttons |= static_cast<uint16_t>(state.gamepad.buttons);\n"
+        "    int16_t sx = state.gamepad.thumb_lx, sy = state.gamepad.thumb_ly;\n"
+        "    if (std::abs(int(sx)) > std::abs(int(lx))) lx = sx;\n"
+        "    if (std::abs(int(sy)) > std::abs(int(ly))) ly = sy;\n"
+        "  }\n"
+        "  if (connected && out_gamepad) {\n"
+        "    *out_gamepad = {};\n"
+        "    out_gamepad->buttons = buttons;\n"
+        "    out_gamepad->thumb_lx = lx;\n"
+        "    out_gamepad->thumb_ly = ly;\n"
+        "  }\n"
+        "  return connected;\n"
+        "}\n"
+        "\n"
+        "X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration) {\n",
+    ),
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "  bool HasMouseDialogs() const { return mouse_dialog_count_.load() > 0; }\n",
+        "  bool HasMouseDialogs() const { return mouse_dialog_count_.load() > 0; }\n"
+        "\n"
+        "  // Controller used to navigate dialogs that take input. The source fills in\n"
+        "  // the XInput button bits and left stick; false if no controller.\n"
+        "  struct UIGamepad {\n"
+        "    uint16_t buttons = 0;\n"
+        "    int16_t lx = 0;\n"
+        "    int16_t ly = 0;\n"
+        "  };\n"
+        "  void SetGamepadSource(std::function<bool(UIGamepad*)> source) {\n"
+        "    gamepad_source_ = std::move(source);\n"
+        "  }\n",
+    ),
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "  std::atomic<int> mouse_dialog_count_{0};\n",
+        "  std::atomic<int> mouse_dialog_count_{0};\n"
+        "  std::function<bool(UIGamepad*)> gamepad_source_;\n"
+        "  bool gamepad_fed_ = false;\n"
+        "  void FeedGamepad(ImGuiIO& io);\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "#include <cfloat>\n",
+        "#include <algorithm>\n#include <cfloat>\n#include <utility>\n",
+    ),
+    (
+        "src/ui/rex_app.cpp",
+        "#include <algorithm>\n#include <filesystem>\n",
+        "#include <algorithm>\n#include <cstdlib>\n#include <filesystem>\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  ImGui::NewFrame();\n",
+        "  FeedGamepad(io);\n"
+        "\n"
+        "  ImGui::NewFrame();\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "void ImGuiDrawer::OnKeyDown(KeyEvent& e) {\n",
+        "void ImGuiDrawer::FeedGamepad(ImGuiIO& io) {\n"
+        "  // XInput button bit -> ImGui gamepad key (A = activate, B = back).\n"
+        "  static const std::pair<uint16_t, ImGuiKey> kButtons[] = {\n"
+        "      {0x0001, ImGuiKey_GamepadDpadUp},    {0x0002, ImGuiKey_GamepadDpadDown},\n"
+        "      {0x0004, ImGuiKey_GamepadDpadLeft},  {0x0008, ImGuiKey_GamepadDpadRight},\n"
+        "      {0x0010, ImGuiKey_GamepadStart},     {0x0020, ImGuiKey_GamepadBack},\n"
+        "      {0x0100, ImGuiKey_GamepadL1},        {0x0200, ImGuiKey_GamepadR1},\n"
+        "      {0x1000, ImGuiKey_GamepadFaceDown},  {0x2000, ImGuiKey_GamepadFaceRight},\n"
+        "      {0x4000, ImGuiKey_GamepadFaceLeft},  {0x8000, ImGuiKey_GamepadFaceUp},\n"
+        "  };\n"
+        "  bool want = gamepad_source_ && mouse_dialog_count_.load() > 0;\n"
+        "  if (!want && !gamepad_fed_) {\n"
+        "    return;\n"
+        "  }\n"
+        "  UIGamepad pad;\n"
+        "  bool connected = want && gamepad_source_(&pad);\n"
+        "  if (!connected) {\n"
+        "    pad = UIGamepad();\n"
+        "  }\n"
+        "  if (want) {\n"
+        "    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;\n"
+        "  }\n"
+        "  if (connected) {\n"
+        "    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;\n"
+        "  } else {\n"
+        "    io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;\n"
+        "  }\n"
+        "  for (const auto& [bit, key] : kButtons) {\n"
+        "    io.AddKeyEvent(key, (pad.buttons & bit) != 0);\n"
+        "  }\n"
+        "  auto stick = [&io](ImGuiKey neg, ImGuiKey pos, int16_t value) {\n"
+        "    constexpr float kDead = 8689.0f;  // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE\n"
+        "    float v = float(value);\n"
+        "    float n = v < -kDead ? std::min(1.0f, (-v - kDead) / (32768.0f - kDead)) : 0.0f;\n"
+        "    float p = v > kDead ? std::min(1.0f, (v - kDead) / (32767.0f - kDead)) : 0.0f;\n"
+        "    io.AddKeyAnalogEvent(neg, n > 0.1f, n);\n"
+        "    io.AddKeyAnalogEvent(pos, p > 0.1f, p);\n"
+        "  };\n"
+        "  stick(ImGuiKey_GamepadLStickLeft, ImGuiKey_GamepadLStickRight, pad.lx);\n"
+        "  stick(ImGuiKey_GamepadLStickDown, ImGuiKey_GamepadLStickUp, pad.ly);\n"
+        "  gamepad_fed_ = want;\n"
+        "}\n"
+        "\n"
+        "void ImGuiDrawer::OnKeyDown(KeyEvent& e) {\n",
+    ),
+    (
+        "src/ui/rex_app.cpp",
+        "        return !imgui_drawer_->GetIO().WantCaptureMouse;\n      });\n",
+        "        return !imgui_drawer_->GetIO().WantCaptureMouse;\n      });\n"
+        "      imgui_drawer_->SetGamepadSource([input_sys](rex::ui::ImGuiDrawer::UIGamepad* pad) {\n"
+        "        bool any = false;\n"
+        "        for (uint32_t user = 0; user < 4; ++user) {\n"
+        "          rex::input::X_INPUT_GAMEPAD gamepad = {};\n"
+        "          if (!input_sys->GetStateForUI(user, &gamepad)) {\n"
+        "            continue;\n"
+        "          }\n"
+        "          any = true;\n"
+        "          pad->buttons |= static_cast<uint16_t>(gamepad.buttons);\n"
+        "          int16_t lx = gamepad.thumb_lx, ly = gamepad.thumb_ly;\n"
+        "          if (std::abs(int(lx)) > std::abs(int(pad->lx))) pad->lx = lx;\n"
+        "          if (std::abs(int(ly)) > std::abs(int(pad->ly))) pad->ly = ly;\n"
+        "        }\n"
+        "        return any;\n"
+        "      });\n",
+    ),
+    (
+        "src/ui/rex_app.cpp",
+        "  if (runtime_ && runtime_->input_system()) {\n    runtime_->input_system()->Shutdown();\n",
+        "  if (imgui_drawer_) {\n    imgui_drawer_->SetGamepadSource(nullptr);\n  }\n"
+        "  if (runtime_ && runtime_->input_system()) {\n    runtime_->input_system()->Shutdown();\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "      if (first_draw) {\n        ImGui::SetKeyboardFocusHere();\n      }\n"
+        "      for (size_t i = 0; i < buttons_.size(); ++i) {\n"
+        "        if (ImGui::Button(buttons_[i].c_str())) {\n",
+        "      for (size_t i = 0; i < buttons_.size(); ++i) {\n"
+        "        if (first_draw && (i == default_button_ ||\n"
+        "                           (i == 0 && default_button_ >= buttons_.size()))) {\n"
+        "          ImGui::SetKeyboardFocusHere();\n"
+        "        }\n"
+        "        if (ImGui::Button(buttons_[i].c_str())) {\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
