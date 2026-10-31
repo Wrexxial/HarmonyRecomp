@@ -134,9 +134,9 @@ On the Xbox 360 the game's co-op (up to six players) only works over Xbox Live. 
 - **Sessions and matchmaking:** create, search, join, details, host migration. Instead of a server, the search asks all PCs in the network (broadcast) plus the addresses in `netplay_peers`. Every player runs a small lobby service on UDP port `47658`.
 - **XNet and QoS:** players are identified by their IPv4 address. The game's own traffic is plain UDP on port `1000` directly between the PCs.
 
-### Playing over the internet without a VPN (in testing)
+### Playing over the internet without a VPN
 
-With an online server (`netplay_server`, F6 > Online > Online server) no VPN is needed: you get a room code while hosting, friends join with it in F6 > Online, public rooms are found by the game's own search, and players connect directly or through the server's relay. The server program is in [`server/`](server/README.md).
+Switch on online co-op in F6 > Online, Save and restart. The game connects to the HarmonyRecomp online server (`netplay_server`, preset to the community server `87.106.10.23`; empty it for LAN/VPN-only play) and no VPN is needed: you get a room code while hosting, friends join with it in F6 > Online, public rooms are found by the game's own search, and players connect directly or through the server's relay. The server program is in [`server/`](server/README.md).
 
 ### Playing with friends over the internet
 

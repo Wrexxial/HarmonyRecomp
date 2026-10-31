@@ -37,7 +37,8 @@ REXCVAR_DEFINE_UINT32(netplay_remote_port, 47658, "Netplay",
                       "instances on one PC)");
 REXCVAR_DEFINE_UINT32(netplay_search_ms, 1000, "Netplay",
                       "How long a lobby search waits for answers, in milliseconds");
-REXCVAR_DEFINE_STRING(netplay_server, "", "Netplay",
+// The HarmonyRecomp community server (server/hrnp_server.py on a VPS).
+REXCVAR_DEFINE_STRING(netplay_server, "87.106.10.23", "Netplay",
                       "Online server (host or host:port) for room codes and play without a VPN; "
                       "empty = LAN/VPN only");
 REXCVAR_DEFINE_BOOL(netplay_public_rooms, true, "Netplay",
