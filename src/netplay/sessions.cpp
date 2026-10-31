@@ -575,6 +575,7 @@ bool HandleXgi(uint32_t message, uint32_t buffer_ptr, uint32_t buffer_length,
                   uint32_t(req.proc_index), uint32_t(req.num_results), uint16_t(req.num_props),
                   uint16_t(req.num_ctx));
       *result = RunRequest(overlapped_ptr, true, [req] {
+        PrepareSearch();
         auto found = FilterJoinable(lobby::Search(static_cast<int>(SearchTimeoutMs())));
         LogFound("XSessionSearch", found);
         if (!found.empty()) NoteRemoteHost(found.front().from.ip);

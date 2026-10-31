@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -36,6 +37,7 @@
 #include <rex/types.h>
 
 #include "netplay.h"
+#include "online.h"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -180,6 +182,42 @@ std::mutex g_table_mutex;
 std::map<uint32_t, GameSocket> g_table;
 uint32_t g_next_handle = kSocketHandleBase;
 
+// ---- Online play (netplay/online.h) -------------------------------------------------
+//
+// Other players have virtual addresses (10.66.x.y). Datagrams the game sends
+// there go through the online module; datagrams from them are queued here per
+// socket and handed to the game's receives before the native socket's.
+
+struct VirtualDatagram {
+  uint32_t src_ip = 0;
+  uint16_t src_port = 0;
+  std::vector<uint8_t> data;
+};
+
+std::mutex g_inbox_mutex;
+std::map<uint32_t, std::deque<VirtualDatagram>> g_inbox;  // socket handle -> datagrams
+std::map<uint32_t, uint16_t> g_virtual_ports;             // socket handle -> bound port
+
+bool InboxPeek(uint32_t socket, size_t* size) {
+  std::lock_guard lock(g_inbox_mutex);
+  auto it = g_inbox.find(socket);
+  if (it == g_inbox.end() || it->second.empty()) return false;
+  if (size) *size = it->second.front().data.size();
+  return true;
+}
+
+bool InboxPop(uint32_t socket, VirtualDatagram* out) {
+  std::lock_guard lock(g_inbox_mutex);
+  auto it = g_inbox.find(socket);
+  if (it == g_inbox.end() || it->second.empty()) return false;
+  *out = std::move(it->second.front());
+  it->second.pop_front();
+  return true;
+}
+
+void ListenVirtual(uint32_t socket, uint16_t port);
+void UnlistenVirtual(uint32_t socket);
+
 bool NativeFor(uint32_t socket_handle, uint64_t* native) {
   std::lock_guard lock(g_table_mutex);
   auto it = g_table.find(socket_handle);
@@ -277,6 +315,25 @@ RecvResult TryRecv(const RecvOp& op, uint32_t* bytes, uint32_t* error) {
   size_t capacity = 0;
   for (uint32_t i = 0; bufs && i < op.count; ++i) capacity += bufs[i].len;
   capacity = std::min(capacity, kMaxDatagram);
+
+  VirtualDatagram vd;
+  while (InboxPop(op.socket, &vd)) {
+    if (vd.data.size() > capacity) continue;  // larger than the game's buffer: drop
+    size_t offset = 0;
+    for (uint32_t i = 0; i < op.count && offset < vd.data.size(); ++i) {
+      size_t chunk = std::min<size_t>(bufs[i].len, vd.data.size() - offset);
+      if (auto* dst = G<uint8_t>(bufs[i].buf)) std::memcpy(dst, vd.data.data() + offset, chunk);
+      offset += chunk;
+    }
+    sockaddr_in from{};
+    from.sin_family = AF_INET;
+    from.sin_port = htons(vd.src_port);
+    from.sin_addr.s_addr = htonl(vd.src_ip);
+    WriteFrom(op.from_ptr, op.fromlen_ptr, from);
+    if (auto* flags = G<rex::be<uint32_t>>(op.flags_ptr)) *flags = 0u;
+    *bytes = static_cast<uint32_t>(vd.data.size());
+    return RecvResult::kData;
+  }
 
   for (int attempt = 0; attempt < 16; ++attempt) {
     if (!Readable(s)) return RecvResult::kWouldBlock;
@@ -378,6 +435,40 @@ void EnsurePump() {
   });
 }
 
+void ListenVirtual(uint32_t socket, uint16_t port) {
+  {
+    std::lock_guard lock(g_inbox_mutex);
+    g_virtual_ports[socket] = port;
+    g_inbox[socket];
+  }
+  online::Listen(port, [socket](uint32_t src_vip, uint16_t src_port, const uint8_t* data,
+                                size_t size) {
+    {
+      std::lock_guard lock(g_inbox_mutex);
+      auto it = g_inbox.find(socket);
+      if (it == g_inbox.end()) return;
+      if (it->second.size() >= 256) it->second.pop_front();  // nobody reads: keep it bounded
+      it->second.push_back({src_vip, src_port, std::vector<uint8_t>(data, data + size)});
+    }
+    NoteReceive(static_cast<uint32_t>(size));
+    g_cv.notify_one();
+  });
+  NETPLAY_LOG("game socket {:08X} also reachable online on port {}", socket, port);
+}
+
+void UnlistenVirtual(uint32_t socket) {
+  uint16_t port = 0;
+  {
+    std::lock_guard lock(g_inbox_mutex);
+    auto it = g_virtual_ports.find(socket);
+    if (it == g_virtual_ports.end()) return;
+    port = it->second;
+    g_virtual_ports.erase(it);
+    g_inbox.erase(socket);
+  }
+  online::Unlisten(port);
+}
+
 // ---- Hooked imports ---------------------------------------------------------------
 
 u32 WSARecvFrom(u32 caller, u32 socket, u32 buffers, u32 buffer_count, u32 bytes_ptr,
@@ -444,6 +535,24 @@ u32 WSASendTo(u32 caller, u32 socket, u32 buffers, u32 buffer_count, u32 bytes_s
   }
   sockaddr_in to{};
   const bool has_to = ReadTo(to_ptr, &to);
+  if (has_to && online::IsVirtual(ntohl(to.sin_addr.s_addr))) {
+    uint16_t src_port = 0;
+    {
+      std::lock_guard lock(g_inbox_mutex);
+      auto it = g_virtual_ports.find(socket);
+      if (it != g_virtual_ports.end()) src_port = it->second;
+    }
+    if (!online::Send(ntohl(to.sin_addr.s_addr), src_port, ntohs(to.sin_port), data.data(),
+                      data.size())) {
+      static std::atomic<uint32_t> unknown{0};
+      if (++unknown <= 5) NETPLAY_LOG("game send to {}: player not connected (yet)", Describe(to));
+    }
+    // Like UDP: a datagram to an unreachable player is simply lost.
+    const auto n = static_cast<uint32_t>(data.size());
+    if (auto* out = G<rex::be<uint32_t>>(bytes_sent_ptr)) *out = n;
+    CompleteOverlapped(overlapped, 0, n);
+    return 0;
+  }
   auto n = has_to ? sendto(N(native), reinterpret_cast<const char*>(data.data()),
                            static_cast<int>(data.size()), 0,
                            reinterpret_cast<const sockaddr*>(&to), sizeof(to))
@@ -511,6 +620,17 @@ u32 RecvFrom(u32 caller, u32 socket, u32 buf_ptr, u32 buf_len, u32 flags, u32 fr
   if (!NativeFor(socket, &native)) {
     SetError(kWsaENotSock);
     return ~0u;
+  }
+  VirtualDatagram vd;
+  if (InboxPop(socket, &vd)) {
+    const size_t n = std::min<size_t>(vd.data.size(), buf_len);
+    if (auto* out = G<uint8_t>(buf_ptr)) std::memcpy(out, vd.data.data(), n);
+    sockaddr_in vfrom{};
+    vfrom.sin_family = AF_INET;
+    vfrom.sin_port = htons(vd.src_port);
+    vfrom.sin_addr.s_addr = htonl(vd.src_ip);
+    WriteFrom(from_ptr, fromlen_ptr, vfrom);
+    return static_cast<u32>(n);
   }
   sockaddr_in from{};
   socklen_type from_len = sizeof(from);
@@ -590,6 +710,15 @@ u32 Bind(u32 caller, u32 socket, u32 name_ptr, u32 name_len) {
   // These ports must be allowed through the firewall (next to the lobby port)
   // for other players to reach this PC.
   if (Enabled()) NETPLAY_LOG("game socket {:08X} bound to port {}", socket, ntohs(addr.sin_port));
+  if (online::Connected()) {
+    sockaddr_in bound{};
+    socklen_type bound_len = sizeof(bound);
+    uint16_t port = ntohs(addr.sin_port);
+    if (getsockname(N(native), reinterpret_cast<sockaddr*>(&bound), &bound_len) == 0) {
+      port = ntohs(bound.sin_port);
+    }
+    ListenVirtual(socket, port);
+  }
   return 0;
 }
 
@@ -654,6 +783,11 @@ u32 IoctlSocket(u32 caller, u32 socket, u32 cmd, u32 arg_ptr) {
     return 0;
   }
   if (cmd == kFionread) {
+    size_t queued = 0;
+    if (InboxPeek(socket, &queued)) {
+      if (arg) *arg = static_cast<uint32_t>(queued);
+      return 0;
+    }
 #if defined(_WIN32)
     u_long value = 0;
     if (ioctlsocket(N(native), FIONREAD, &value) != 0) {
@@ -710,6 +844,15 @@ u32 Select(u32 caller, u32 nfds, u32 read_ptr, u32 write_ptr, u32 except_ptr, u3
     tv.tv_usec = static_cast<int32_t>(static_cast<uint32_t>(guest_tv[1]));
     tvp = &tv;
   }
+  // Sockets with queued datagrams from online players are readable now.
+  std::vector<uint32_t> virtual_ready;
+  for (auto& [handle, native] : members[0]) {
+    if (InboxPeek(handle, nullptr)) virtual_ready.push_back(handle);
+  }
+  if (!virtual_ready.empty()) {
+    tv = timeval{0, 0};
+    tvp = &tv;
+  }
   int ret;
   if (!any) {
     // Windows rejects a select without sockets; behave like a plain wait.
@@ -725,15 +868,21 @@ u32 Select(u32 caller, u32 nfds, u32 read_ptr, u32 write_ptr, u32 except_ptr, u3
       return ~0u;
     }
   }
+  int ready = 0;
   for (int k = 0; k < 3; ++k) {
     if (!guest_sets[k]) continue;
     uint32_t out = 0;
     for (auto& [handle, native] : members[k]) {
-      if (FD_ISSET(N(native), &native_sets[k])) guest_sets[k]->handles[out++] = handle;
+      bool set = FD_ISSET(N(native), &native_sets[k]) ||
+                 (k == 0 && std::find(virtual_ready.begin(), virtual_ready.end(), handle) !=
+                                virtual_ready.end());
+      if (set) guest_sets[k]->handles[out++] = handle;
     }
     guest_sets[k]->count = out;
+    ready += static_cast<int>(out);
   }
-  return static_cast<u32>(ret);
+  (void)ret;
+  return static_cast<u32>(ready);
 }
 
 u32 CloseSocket(u32 caller, u32 socket) {
@@ -763,6 +912,7 @@ u32 CloseSocket(u32 caller, u32 socket) {
     }
     CloseNative(entry.native);
   }
+  UnlistenVirtual(socket);
   if (Enabled()) {
     NETPLAY_LOG("game socket {:08X} closed{}", socket,
                 aborted ? fmt::format(", {} pending receive(s) aborted", aborted) : "");

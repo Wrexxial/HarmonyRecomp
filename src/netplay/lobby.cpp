@@ -294,7 +294,14 @@ BuildInfo OurInfo() { return {S().config.build, S().config.dlc}; }
 
 std::string BuildName(const std::string& build) { return build.empty() ? "unknown" : build; }
 
+VirtualNet g_vnet;
+HostObserver g_host_observer = nullptr;
+
 void SendTo(const udp::Endpoint& to, const Writer& w) {
+  if (g_vnet.is_virtual && g_vnet.is_virtual(to.ip)) {
+    if (g_vnet.send) g_vnet.send(to.ip, to.port, w.data().data(), w.size());
+    return;
+  }
   S().socket.SendTo(to, w.data().data(), w.size());
 }
 
@@ -468,12 +475,21 @@ std::vector<udp::Endpoint> SearchTargets() {
     if (itf.netmask && itf.netmask != 0xFFFFFFFFu) add({itf.broadcast(), s.config.remote_port});
   }
   for (const auto& peer : s.config.peers) add(peer);
+  if (g_vnet.peers) {
+    for (uint32_t vip : g_vnet.peers()) add({vip, kDefaultPort});
+  }
   return targets;
 }
 
 }  // namespace
 
 void SetLogger(LogFn fn) { g_log = fn; }
+void SetVirtualNet(const VirtualNet& net) { g_vnet = net; }
+void SetHostObserver(HostObserver fn) { g_host_observer = fn; }
+
+void Inject(const uint8_t* data, size_t size, const udp::Endpoint& from) {
+  if (S().running) HandleDatagram(data, size, from);
+}
 void SetNoticeSink(LogFn fn) { g_notice = fn; }
 
 bool Start(const Config& config, std::string* error) {
@@ -501,13 +517,21 @@ bool Running() { return S().running; }
 uint16_t BoundPort() { return S().socket.local_port(); }
 
 void Advertise(const SessionAd& ad) {
-  std::lock_guard lock(S().mutex);
-  S().ads[ad.id] = ad;
+  {
+    std::lock_guard lock(S().mutex);
+    S().ads[ad.id] = ad;
+  }
+  if (g_host_observer) g_host_observer(&ad);
 }
 
 void Withdraw(uint64_t session_id) {
-  std::lock_guard lock(S().mutex);
-  S().ads.erase(session_id);
+  std::optional<SessionAd> remaining;
+  {
+    std::lock_guard lock(S().mutex);
+    S().ads.erase(session_id);
+    if (!S().ads.empty()) remaining = S().ads.begin()->second;
+  }
+  if (g_host_observer) g_host_observer(remaining ? &*remaining : nullptr);
 }
 
 void SetQosListen(uint64_t session_id, std::optional<bool> enabled,

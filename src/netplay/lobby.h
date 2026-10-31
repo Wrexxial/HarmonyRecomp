@@ -104,6 +104,24 @@ void ReleaseQosListen(uint64_t session_id);
 
 // Blocks for `timeout_ms` collecting answers. With `session_id`, only that
 // session is asked for (XSessionSearchByID).
+// ---- Online play (netplay/online.h) ----------------------------------------------
+// Players reached through the online server have virtual addresses. The lobby
+// talks to them through these callbacks (on the virtual network the lobby
+// always uses kDefaultPort).
+struct VirtualNet {
+  bool (*is_virtual)(uint32_t ip) = nullptr;
+  bool (*send)(uint32_t ip, uint16_t port, const void* data, size_t size) = nullptr;
+  std::vector<uint32_t> (*peers)() = nullptr;  // searched in addition to the LAN
+};
+void SetVirtualNet(const VirtualNet& net);
+// A lobby datagram that arrived over the virtual network.
+void Inject(const uint8_t* data, size_t size, const udp::Endpoint& from);
+
+// Called with the session we host when it is advertised, nullptr when we no
+// longer advertise any (for online rooms).
+using HostObserver = void (*)(const SessionAd* ad);
+void SetHostObserver(HostObserver fn);
+
 // Hosts with another build are left out (see LastMismatches()).
 std::vector<Found> Search(int timeout_ms, std::optional<uint64_t> session_id = std::nullopt);
 std::vector<Mismatch> LastMismatches();

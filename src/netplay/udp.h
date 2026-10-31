@@ -40,6 +40,9 @@ std::vector<Interface> ListInterfaces();
 // This computer's host name (empty if unavailable).
 std::string Hostname();
 
+// IPv4 address of a host name or dotted address (DNS lookup; blocks).
+std::optional<uint32_t> Resolve(const std::string& host);
+
 // Local source address the OS would use to reach `dest` (no packet is sent).
 std::optional<uint32_t> RouteSourceIp(uint32_t dest);
 

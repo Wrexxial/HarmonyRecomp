@@ -25,6 +25,7 @@ set(HARMONYRECOMP_SOURCES
     src/netplay/hooks.cpp
     src/netplay/lobby.cpp
     src/netplay/netplay.cpp
+    src/netplay/online.cpp
     src/netplay/sessions.cpp
     src/netplay/udp.cpp
 )

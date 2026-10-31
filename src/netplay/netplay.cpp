@@ -17,6 +17,7 @@
 
 #include "../notice.h"
 #include "lobby.h"
+#include "online.h"
 #include "udp.h"
 
 REXCVAR_DEFINE_BOOL(netplay_enabled, false, "Netplay",
@@ -36,6 +37,12 @@ REXCVAR_DEFINE_UINT32(netplay_remote_port, 47658, "Netplay",
                       "instances on one PC)");
 REXCVAR_DEFINE_UINT32(netplay_search_ms, 1000, "Netplay",
                       "How long a lobby search waits for answers, in milliseconds");
+REXCVAR_DEFINE_STRING(netplay_server, "", "Netplay",
+                      "Online server (host or host:port) for room codes and play without a VPN; "
+                      "empty = LAN/VPN only");
+REXCVAR_DEFINE_BOOL(netplay_public_rooms, true, "Netplay",
+                    "Online: list the rooms you host publicly, and find public rooms in the "
+                    "game's search");
 
 namespace harmony::netplay {
 namespace {
@@ -145,6 +152,63 @@ uint32_t ChooseLocalIp(const std::vector<udp::Endpoint>& peers) {
 void LobbyLog(const std::string& message) { NETPLAY_LOG("{}", message); }
 void LobbyNotice(const std::string& message) { harmony::notice::Post(message); }
 
+// ---- Online play -------------------------------------------------------------------
+
+bool VirtualSend(uint32_t ip, uint16_t port, const void* data, size_t size) {
+  return online::Send(ip, lobby::kDefaultPort, port, data, size);
+}
+
+std::vector<uint32_t> VirtualPeers() {
+  std::vector<uint32_t> vips;
+  for (const auto& p : online::Peers()) vips.push_back(p.vip);
+  return vips;
+}
+
+void OnHostAd(const lobby::SessionAd* ad) {
+  if (!online::Connected()) return;
+  if (!ad) {
+    online::CloseRoom();
+    return;
+  }
+  online::OpenRoom(REXCVAR_GET(netplay_public_rooms), ad->host_name,
+                   static_cast<int>(ad->filled_public + ad->filled_private),
+                   static_cast<int>(ad->max_public + ad->max_private));
+}
+
+void OnRoomCode(const std::string& code) {
+  harmony::notice::Post("Online room code: " + code +
+                        " (friends enter it in F6 > Online > Join a room)");
+}
+
+void StartOnline() {
+  const std::string server = REXCVAR_GET(netplay_server);
+  if (server.empty()) return;
+  online::SetLogger(&LobbyLog);
+  online::SetRoomCodeListener(&OnRoomCode);
+  online::Config config;
+  config.server = server;
+  config.build = g_build;
+  config.name = Gamertag();
+  std::string error;
+  if (!online::Start(config, &error)) {
+    NETPLAY_WARN("online server {}: {}. Only LAN/VPN play is available.", server, error);
+    harmony::notice::Post("Online server not reachable (" + error + "). LAN/VPN play only.");
+    return;
+  }
+  // Other players see us at our virtual address from now on.
+  g_local_ip = online::VirtualIp();
+  g_ip_pinned = true;
+  lobby::VirtualNet net;
+  net.is_virtual = &online::IsVirtual;
+  net.send = &VirtualSend;
+  net.peers = &VirtualPeers;
+  lobby::SetVirtualNet(net);
+  lobby::SetHostObserver(&OnHostAd);
+  online::Listen(lobby::kDefaultPort, [](uint32_t vip, uint16_t port, const uint8_t* data,
+                                         size_t size) { lobby::Inject(data, size, {vip, port}); });
+  NETPLAY_LOG("online via {}: our address {}", server, udp::ToString(g_local_ip.load()));
+}
+
 }  // namespace
 
 bool Enabled() { return REXCVAR_GET(netplay_enabled); }
@@ -184,9 +248,25 @@ void Startup() {
                  error);
   }
   for (const auto& p : peers) NETPLAY_LOG("peer {}", udp::ToString(p));
+  StartOnline();
+}
+
+void PrepareSearch() {
+  if (!online::Connected() || !REXCVAR_GET(netplay_public_rooms)) return;
+  // Connect with the hosts of public rooms, so the search below reaches them
+  // (through the relay at first, directly once the connection is up).
+  auto rooms = online::ListRooms(700);
+  size_t joined = 0;
+  for (const auto& room : rooms) {
+    if (joined >= 6) break;
+    std::string message;
+    if (online::JoinRoom(room.code, &message, 700)) ++joined;
+  }
+  if (!rooms.empty()) NETPLAY_LOG("online: {} public room(s), connected to {}", rooms.size(), joined);
 }
 
 void Shutdown() {
+  online::Stop();
   gamesock::Shutdown();
   std::lock_guard lock(g_mutex);
   if (!g_started) return;

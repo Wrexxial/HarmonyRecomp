@@ -37,6 +37,10 @@ void SetBuildInfo(std::string build, std::vector<std::string> dlc);
 void Startup();
 void Shutdown();
 
+// Before the game's lobby search: with the online server, connect to the hosts
+// of public rooms so the search finds them.
+void PrepareSearch();
+
 // IPv4 (host byte order) this machine advertises to other players.
 uint32_t LocalIp();
 // After finding a host at `ip`: switch to the local address that reaches it,

@@ -20,6 +20,7 @@ using socklen_t = int;
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -173,6 +174,25 @@ std::optional<uint32_t> RouteSourceIp(uint32_t dest) {
   }
   CloseNative(s);
   return result;
+}
+
+std::optional<uint32_t> Resolve(const std::string& host) {
+  Startup();
+  if (auto ep = Parse(host, 0)) return ep->ip;
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  addrinfo* result = nullptr;
+  if (getaddrinfo(host.c_str(), nullptr, &hints, &result) != 0 || !result) return std::nullopt;
+  std::optional<uint32_t> ip;
+  for (auto* ai = result; ai; ai = ai->ai_next) {
+    if (ai->ai_family == AF_INET) {
+      ip = ntohl(reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr.s_addr);
+      break;
+    }
+  }
+  freeaddrinfo(result);
+  return ip;
 }
 
 Socket::~Socket() { Close(); }

@@ -3,13 +3,14 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace harmony {
 
-// Online co-op settings (netplay_* in harmonyrecomp.toml). They are read when
-// the game starts, so changes apply after a restart.
+// Online co-op settings (netplay_* in harmonyrecomp.toml), read when the game
+// starts, and the live online rooms (room code, join by code, public rooms).
 class OnlineTab {
  public:
   OnlineTab();
@@ -18,6 +19,14 @@ class OnlineTab {
  private:
   void LoadPeers();
   void StorePeers();
+  void DrawRooms();
+
+  // Server requests run in the background; the result lands here.
+  struct Async;
+  std::shared_ptr<Async> async_;
+  char join_code_[16] = {};
+  std::string start_server_;
+  char server_[128] = {};
 
   std::string start_enabled_;
   std::string start_name_;
