@@ -2030,7 +2030,18 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
     print(f"[5/5] Building the game ({preset})")
     progress("compile")
     fix_future_mtimes(ROOT, prefix)
-    run(["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}"], cwd=ROOT)
+    configure = ["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}",
+                 f"-DCMAKE_BUILD_TYPE={config}"]
+    run(configure, cwd=ROOT)
+    # When the compiler found on PATH changes (e.g. another LLVM installed or
+    # PATH reordered), CMake throws the cache away and configures again without
+    # the preset's settings, which left a Debug build in the release folder
+    # that cannot link against the release SDK. Configure once more if so.
+    cache = ROOT / "out" / "build" / preset / "CMakeCache.txt"
+    if cache.exists() and f"CMAKE_BUILD_TYPE:STRING={config}\n" not in cache.read_text(errors="replace"):
+        print(f"      build type was reset (compiler change?), configuring again as {config}")
+        cache.unlink()
+        run(configure, cwd=ROOT)
     build = ["cmake", "--build", f"out/build/{preset}"]
     if jobs:
         build += ["--parallel", str(jobs)]
