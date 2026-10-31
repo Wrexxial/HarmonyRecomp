@@ -19,7 +19,10 @@ The PowerPC code of `default.xex` and the character modules is translated to C++
 ## Features
 
 - Runs the full game natively on Windows: all stages, all six base characters
-- Graphics menu (F6): resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), fullscreen
+- Settings menu (F6), usable with a controller:
+  - Graphics: resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), fullscreen
+  - Controls: controller button remapping, keyboard/mouse key bindings
+  - Online: co-op on/off, player name, own address, other players' addresses
 - FPS counter (F2)
 - **Online co-op without Xbox Live**: up to six players over LAN or a virtual LAN (Radmin VPN, ZeroTier, Tailscale)
 - **DLC support**: all characters and stage packs, from your own DLC packages and title update 2 (see [DLC](#dlc))
@@ -92,12 +95,14 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F2 | FPS counter |
 | F3 | SDK debug overlay (frame times) |
 | F4 | All SDK runtime settings |
-| F6 | Graphics menu, including the frame rate limit ("Save" writes `harmonyrecomp.toml`) |
+| F6 | Settings menu: graphics, controls, online ("Save" writes `harmonyrecomp.toml`) |
 | `^` | Log console |
 
 ### Controls
 
-A controller (XInput, or any controller SDL supports) works out of the box. Keyboard and mouse are off by default; add `mnk_mode = true` to `harmonyrecomp.toml` to use them:
+A controller (XInput, or any controller SDL supports) works out of the box, also in the game's system dialogs ("create a new save?", sign-in) and in the F6 menu: D-pad or left stick to move, A to confirm, B to go back, LB/RB to switch tabs. Its buttons can be remapped in F6 > Controls > Controller (stored as `remap_a = "B"` and so on; the dialogs always use the unmapped A/B).
+
+Keyboard and mouse are off by default; switch them on in F6 > Controls > Keyboard & mouse (or `mnk_mode = true` in `harmonyrecomp.toml`):
 
 | Key | Button | Key | Button |
 | --- | --- | --- | --- |
@@ -107,7 +112,7 @@ A controller (XInput, or any controller SDL supports) works out of the box. Keyb
 | Q / F | LB / RB | Right / left mouse button | LT / RT |
 | Escape | Start | Tab | Back |
 
-Every key can be changed in the same file (`keybind_a = "J"`, `keybind_start = "Enter"`, ...) or in the F4 settings menu.
+Every key can be changed in F6 > Controls > Keyboard & mouse: click the key, then press the new key or mouse button. In the file they are `keybind_a = "J"`, `keybind_start = "Return"`, ...
 
 Logs are written to `logs\` next to the exe. If the game crashes, a `crash_*.txt` appears there as well; please attach it (and the matching log) to bug reports. The build also writes `harmonyrecomp.map`, which turns the addresses in a crash report into function names.
 
@@ -125,7 +130,7 @@ On the Xbox 360 the game's co-op (up to six players) only works over Xbox Live. 
    - **Radmin VPN** or **ZeroTier**: lobbies are found automatically.
    - **Tailscale**: does not forward broadcasts; put each other's Tailscale IP into `netplay_peers`.
 2. **Everybody installs the game** (setup or own build) with their own copy. All players should use the same release and the same game version (all with or all without the title update).
-3. **Settings** in `harmonyrecomp.toml` next to the exe:
+3. **Settings:** press F6 in the game, open the **Online** tab, switch on online co-op, enter your name (and, with Tailscale, the others' addresses), click **Save** and restart the game. Or write them into `harmonyrecomp.toml` next to the exe:
 
    ```toml
    netplay_enabled = true
@@ -173,7 +178,7 @@ Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion
 | `harmonyrecomp_config_tu2.toml` | The same for version 2.04 (title update 2) |
 | `harmonyrecomp_dll*.toml` | Codegen settings per character module |
 | `harmonyrecomp.toml` | Template for the runtime settings |
-| `src/` | Host code: app, graphics menu, crash reports, runtime fixes, DLC installation |
+| `src/` | Host code: app, settings menu, controller remapping, crash reports, runtime fixes, DLC installation |
 | `src/netplay/` | Online co-op: Live replacement, sessions, lobby service, game sockets |
 | `scripts/build.py` | Complete build, including the SDK patches |
 | `scripts/extract_game.py` | STFS package extractor (game and DLC) |
@@ -197,12 +202,11 @@ Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion
 
 ## Known issues
 
-- With DLC, leaving a stage logs `BaseHeap::Release failed` once per unloaded module (a double release in the SDK, harmless).
-- Not every DLC stage has been played yet.
+- Text input in system dialogs (e.g. naming something) still needs a keyboard.
 
 ## Planned
 
-Next steps, roughly in this order: more testing of every DLC stage and of co-op with the title update, settings in the game instead of `harmonyrecomp.toml`, online play without a VPN (room codes and public lobbies), widescreen and Linux/Steam Deck, and later mod support.
+Next steps, roughly in this order: online play without a VPN (room codes and public lobbies), widescreen and Linux/Steam Deck, and later mod support.
 
 ## Credits
 
