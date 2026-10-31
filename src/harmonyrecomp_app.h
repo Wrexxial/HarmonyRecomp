@@ -29,6 +29,7 @@
 #include "game_fixes.h"
 #include "graphics_menu.h"
 #include "netplay/netplay.h"
+#include "notice.h"
 
 class HarmonyrecompApp : public rex::ReXApp {
  public:
@@ -55,8 +56,9 @@ class HarmonyrecompApp : public rex::ReXApp {
     // device (data/player, data/text, ...). build.py copied them over the
     // game data, next to default.xexp, so update: is the game data folder too.
     std::error_code ec;
-    if (paths.update_data_root.empty() && !paths.game_data_root.empty() &&
-        std::filesystem::exists(paths.game_data_root / "default.xexp", ec)) {
+    title_update_ = !paths.game_data_root.empty() &&
+                    std::filesystem::exists(paths.game_data_root / "default.xexp", ec);
+    if (paths.update_data_root.empty() && title_update_) {
       paths.update_data_root = paths.game_data_root;
     }
   }
@@ -104,6 +106,9 @@ class HarmonyrecompApp : public rex::ReXApp {
   void OnPostSetup() override {
     harmony::InstallGameFixes(runtime());
     harmony::InstallControllerRemap(runtime());
+    // Other players must run the same game version; DLC differences are only
+    // pointed out (see netplay/lobby.cpp).
+    harmony::netplay::SetBuildInfo(title_update_ ? "2.04" : "1.04", harmony::BuiltDlcPackages());
     harmony::netplay::Startup();
   }
 
@@ -136,6 +141,7 @@ class HarmonyrecompApp : public rex::ReXApp {
 
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
     drawer_ = drawer;
+    harmony::notice::Init(drawer, &app_context());
     rex::ui::RegisterBind("bind_graphics_menu", "F6", "Toggle settings menu",
                           [this] { ToggleGraphicsMenu(); });
     rex::ui::RegisterBind("bind_fps_counter", "F2", "Toggle FPS counter",
@@ -152,6 +158,7 @@ class HarmonyrecompApp : public rex::ReXApp {
     rex::ui::UnregisterBind("bind_fps_counter");
     graphics_menu_.reset();
     fps_counter_.reset();
+    harmony::notice::Shutdown();
     drawer_ = nullptr;
   }
 
@@ -205,6 +212,7 @@ class HarmonyrecompApp : public rex::ReXApp {
   }
 
   std::filesystem::path config_path_;
+  bool title_update_ = false;
   rex::ui::ImGuiDrawer* drawer_ = nullptr;
   std::unique_ptr<harmony::GraphicsMenuDialog> graphics_menu_;
   std::unique_ptr<harmony::FpsCounterDialog> fps_counter_;

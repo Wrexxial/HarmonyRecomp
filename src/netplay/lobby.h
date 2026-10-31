@@ -52,6 +52,16 @@ struct Found {
   SessionAd ad;
   udp::Endpoint from;  // host's lobby service address (IP the host is reachable on)
   uint32_t rtt_ms = 0;
+  std::string build;              // host's game version, e.g. "2.04"
+  std::vector<std::string> dlc;   // host's DLC packages
+};
+
+// A host the last Search() found but left out, because playing together would
+// desync (other game version or HarmonyRecomp netplay protocol).
+struct Mismatch {
+  uint32_t ip = 0;
+  std::string host_name;
+  std::string reason;
 };
 
 struct QosResult {
@@ -66,10 +76,17 @@ struct Config {
   uint16_t remote_port = kDefaultPort;  // lobby port of other players (broadcast target)
   std::vector<udp::Endpoint> peers;     // extra unicast targets for searches
   uint32_t title_id = 0;
+  // Compared between players: sessions of hosts with another build are not
+  // offered (other game version = other code and data = desync).
+  std::string build;
+  std::vector<std::string> dlc;
 };
 
 using LogFn = void (*)(const std::string& message);
 void SetLogger(LogFn fn);
+// Short messages for the player (shown in the game), e.g. why a lobby was
+// left out of a search.
+void SetNoticeSink(LogFn fn);
 
 bool Start(const Config& config, std::string* error);
 void Stop();
@@ -87,7 +104,9 @@ void ReleaseQosListen(uint64_t session_id);
 
 // Blocks for `timeout_ms` collecting answers. With `session_id`, only that
 // session is asked for (XSessionSearchByID).
+// Hosts with another build are left out (see LastMismatches()).
 std::vector<Found> Search(int timeout_ms, std::optional<uint64_t> session_id = std::nullopt);
+std::vector<Mismatch> LastMismatches();
 
 // Probes the host at `ip` for its QoS data of `session_id`.
 QosResult Qos(uint32_t ip, uint64_t session_id, int timeout_ms);

@@ -15,6 +15,7 @@
 #include <rex/cvar.h>
 #include <rex/system/kernel_state.h>
 
+#include "../notice.h"
 #include "lobby.h"
 #include "udp.h"
 
@@ -45,6 +46,8 @@ std::mutex g_mutex;
 std::atomic<uint32_t> g_local_ip{0x7F000001};
 bool g_ip_pinned = false;
 bool g_started = false;
+std::string g_build;
+std::vector<std::string> g_dlc;
 uint64_t g_xuid = 0;
 
 uint64_t Fnv1a64(const std::string& text) {
@@ -140,10 +143,17 @@ uint32_t ChooseLocalIp(const std::vector<udp::Endpoint>& peers) {
 }
 
 void LobbyLog(const std::string& message) { NETPLAY_LOG("{}", message); }
+void LobbyNotice(const std::string& message) { harmony::notice::Post(message); }
 
 }  // namespace
 
 bool Enabled() { return REXCVAR_GET(netplay_enabled); }
+
+void SetBuildInfo(std::string build, std::vector<std::string> dlc) {
+  std::lock_guard lock(g_mutex);
+  g_build = std::move(build);
+  g_dlc = std::move(dlc);
+}
 
 void Startup() {
   std::lock_guard lock(g_mutex);
@@ -158,11 +168,15 @@ void Startup() {
   NETPLAY_LOG("signed in to (emulated) Live as '{}', online XUID {:016X}", Gamertag(), g_xuid);
 
   lobby::SetLogger(&LobbyLog);
+  lobby::SetNoticeSink(&LobbyNotice);
   lobby::Config config;
   config.title_id = kTitleId;
   config.port = static_cast<uint16_t>(REXCVAR_GET(netplay_port));
   config.remote_port = static_cast<uint16_t>(REXCVAR_GET(netplay_remote_port));
   config.peers = peers;
+  config.build = g_build;
+  config.dlc = g_dlc;
+  NETPLAY_LOG("game version {}, {} DLC package(s)", g_build, g_dlc.size());
   std::string error;
   if (!lobby::Start(config, &error)) {
     NETPLAY_WARN("lobby service could not start: {}. Hosting still works for players who "

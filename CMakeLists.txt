@@ -14,6 +14,7 @@ include(generated/rexglue.cmake)
 set(HARMONYRECOMP_SOURCES
     src/main.cpp
     src/graphics_menu.cpp
+    src/notice.cpp
     src/controller_remap.cpp
     src/controls_menu.cpp
     src/online_menu.cpp

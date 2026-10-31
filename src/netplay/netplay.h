@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <fmt/format.h>
 #include <rex/logging.h>
@@ -26,6 +27,10 @@ namespace harmony::netplay {
 
 // netplay_enabled in harmonyrecomp.toml. Off: the SDK's offline behaviour.
 bool Enabled();
+
+// Game version ("1.04" / "2.04") and DLC packages of this build, compared with
+// other players in the lobby. Call before Startup().
+void SetBuildInfo(std::string build, std::vector<std::string> dlc);
 
 // Reads the settings, picks the local address and starts the lobby service.
 // Called once the runtime is set up; does nothing when netplay is off.

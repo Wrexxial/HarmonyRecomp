@@ -137,7 +137,7 @@ On the Xbox 360 the game's co-op (up to six players) only works over Xbox Live. 
 1. **Set up a virtual LAN.** Everybody joins the same network:
    - **Radmin VPN** or **ZeroTier**: lobbies are found automatically.
    - **Tailscale**: does not forward broadcasts; put each other's Tailscale IP into `netplay_peers`.
-2. **Everybody installs the game** (setup or own build) with their own copy. All players should use the same release and the same game version (all with or all without the title update).
+2. **Everybody installs the game** (setup or own build) with their own copy. All players need the same game version (all with or all without the title update) and a compatible HarmonyRecomp release: lobbies of other versions are hidden, and a message at the bottom of the screen says why. Different DLC is allowed; the game points it out.
 3. **Settings:** press F6 in the game, open the **Online** tab, switch on online co-op, enter your name (and, with Tailscale, the others' addresses), click **Save** and restart the game. Or write them into `harmonyrecomp.toml` next to the exe:
 
    ```toml

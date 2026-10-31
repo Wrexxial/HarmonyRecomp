@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <set>
 #include <thread>
 #include <unordered_map>
 
@@ -17,7 +18,8 @@ namespace harmony::netplay::lobby {
 namespace {
 
 constexpr uint32_t kMagic = 0x48524E50;  // "HRNP"
-constexpr uint8_t kVersion = 1;
+// 2: search requests and answers carry the game version and DLC list.
+constexpr uint8_t kVersion = 2;
 constexpr size_t kMaxDatagram = 1400;
 
 enum class Type : uint8_t {
@@ -118,12 +120,48 @@ void WriteHeader(Writer& w, const Header& h) {
   w.u32(h.request_id);
 }
 
-bool ReadHeader(Reader& r, Header* h) {
-  if (r.u32() != kMagic || r.u8() != kVersion) return false;
+enum class HeaderResult { kOk, kOtherVersion, kInvalid };
+
+HeaderResult ReadHeader(Reader& r, Header* h, uint8_t* version) {
+  if (r.u32() != kMagic) return HeaderResult::kInvalid;
+  *version = r.u8();
+  if (!r.ok()) return HeaderResult::kInvalid;
+  if (*version != kVersion) return HeaderResult::kOtherVersion;
   h->type = static_cast<Type>(r.u8());
   h->title_id = r.u32();
   h->instance = r.u64();
   h->request_id = r.u32();
+  return r.ok() ? HeaderResult::kOk : HeaderResult::kInvalid;
+}
+
+struct BuildInfo {
+  std::string build;
+  std::vector<std::string> dlc;
+};
+
+void WriteString(Writer& w, const std::string& text) {
+  std::string t = text.substr(0, 64);
+  w.u8(static_cast<uint8_t>(t.size()));
+  w.bytes(t.data(), t.size());
+}
+
+std::string ReadString(Reader& r) {
+  std::string t(r.u8(), '\0');
+  if (!t.empty()) r.bytes(t.data(), t.size());
+  return t;
+}
+
+void WriteInfo(Writer& w, const BuildInfo& info) {
+  WriteString(w, info.build);
+  size_t count = std::min<size_t>(info.dlc.size(), 24);
+  w.u8(static_cast<uint8_t>(count));
+  for (size_t i = 0; i < count; ++i) WriteString(w, info.dlc[i]);
+}
+
+bool ReadInfo(Reader& r, BuildInfo* info) {
+  info->build = ReadString(r);
+  info->dlc.resize(r.u8());
+  for (auto& d : info->dlc) d = ReadString(r);
   return r.ok();
 }
 
@@ -220,6 +258,11 @@ struct State {
   std::unordered_map<uint32_t, std::shared_ptr<Pending>> pending;
   // Lobby service port per host IP, learned from search answers.
   std::unordered_map<uint32_t, uint16_t> host_ports;
+  // Players running another netplay protocol: IP -> (last seen ms, version).
+  std::unordered_map<uint32_t, std::pair<uint64_t, uint8_t>> other_protocol;
+  std::set<uint32_t> logged_mismatch;  // IPs already reported in the log
+  std::vector<Mismatch> last_mismatches;
+  std::map<std::string, uint64_t> noticed;  // notice text -> last shown ms
 };
 
 State& S() {
@@ -232,6 +275,25 @@ void Log(const std::string& message) {
   if (g_log) g_log(message);
 }
 
+LogFn g_notice = nullptr;
+// The game searches again every few seconds: show the same notice at most once
+// a minute.
+void Notice(const std::string& message) {
+  auto& s = S();
+  {
+    std::lock_guard lock(s.mutex);
+    uint64_t now = NowMs();
+    auto it = s.noticed.find(message);
+    if (it != s.noticed.end() && now - it->second < 60000) return;
+    s.noticed[message] = now;
+  }
+  if (g_notice) g_notice(message);
+}
+
+BuildInfo OurInfo() { return {S().config.build, S().config.dlc}; }
+
+std::string BuildName(const std::string& build) { return build.empty() ? "unknown" : build; }
+
 void SendTo(const udp::Endpoint& to, const Writer& w) {
   S().socket.SendTo(to, w.data().data(), w.size());
 }
@@ -240,14 +302,50 @@ void HandleDatagram(const uint8_t* data, size_t size, const udp::Endpoint& from)
   auto& s = S();
   Reader r(data, size);
   Header h;
-  if (!ReadHeader(r, &h) || h.title_id != s.config.title_id) return;
+  uint8_t version = 0;
+  switch (ReadHeader(r, &h, &version)) {
+    case HeaderResult::kInvalid:
+      return;
+    case HeaderResult::kOtherVersion: {
+      // Another HarmonyRecomp release with an incompatible lobby protocol:
+      // cannot talk to it, but tell the player why it is not found.
+      bool first = false;
+      {
+        std::lock_guard lock(s.mutex);
+        first = s.logged_mismatch.insert(from.ip).second;
+        s.other_protocol[from.ip] = {NowMs(), version};
+      }
+      if (first) {
+        Log("player at " + udp::ToString(from.ip) + " uses netplay protocol " +
+            std::to_string(version) + " (ours " + std::to_string(kVersion) +
+            "): another HarmonyRecomp version, cannot play together");
+      }
+      return;
+    }
+    case HeaderResult::kOk:
+      break;
+  }
+  if (h.title_id != s.config.title_id) return;
   if (h.instance == s.instance) return;  // our own broadcast
 
   switch (h.type) {
     case Type::kSearchRequest: {
       uint8_t flags = r.u8();
       uint64_t wanted = r.u64();
-      if (!r.ok()) return;
+      BuildInfo searcher;
+      if (!ReadInfo(r, &searcher)) return;
+      if (searcher.build != s.config.build) {
+        bool first = false;
+        {
+          std::lock_guard lock(s.mutex);
+          first = s.logged_mismatch.insert(from.ip).second;
+        }
+        if (first) {
+          Log("search from " + udp::ToString(from.ip) + " with game version " +
+              BuildName(searcher.build) + " (ours " + BuildName(s.config.build) +
+              "): they will not see our lobby");
+        }
+      }
       std::vector<SessionAd> ads;
       {
         std::lock_guard lock(s.mutex);
@@ -258,6 +356,7 @@ void HandleDatagram(const uint8_t* data, size_t size, const udp::Endpoint& from)
       for (const auto& ad : ads) {
         Writer w;
         WriteHeader(w, {Type::kSearchResponse, s.config.title_id, s.instance, h.request_id});
+        WriteInfo(w, OurInfo());
         WriteAd(w, ad);
         SendTo(from, w);
       }
@@ -297,7 +396,10 @@ void HandleDatagram(const uint8_t* data, size_t size, const udp::Endpoint& from)
       uint32_t rtt = static_cast<uint32_t>(NowMs() - pending->sent_at);
       if (h.type == Type::kSearchResponse) {
         Found f;
-        if (!ReadAd(r, &f.ad)) return;
+        BuildInfo info;
+        if (!ReadInfo(r, &info) || !ReadAd(r, &f.ad)) return;
+        f.build = std::move(info.build);
+        f.dlc = std::move(info.dlc);
         f.from = from;
         f.rtt_ms = rtt;
         {
@@ -372,6 +474,7 @@ std::vector<udp::Endpoint> SearchTargets() {
 }  // namespace
 
 void SetLogger(LogFn fn) { g_log = fn; }
+void SetNoticeSink(LogFn fn) { g_notice = fn; }
 
 bool Start(const Config& config, std::string* error) {
   auto& s = S();
@@ -429,6 +532,7 @@ std::vector<Found> Search(int timeout_ms, std::optional<uint64_t> session_id) {
   WriteHeader(w, {Type::kSearchRequest, s.config.title_id, s.instance, request_id});
   w.u8(session_id ? 1 : 0);
   w.u64(session_id.value_or(0));
+  WriteInfo(w, OurInfo());
   auto targets = SearchTargets();
   pending->sent_at = NowMs();
   // Send twice: a single lost broadcast should not hide a lobby. Answers are
@@ -438,8 +542,57 @@ std::vector<Found> Search(int timeout_ms, std::optional<uint64_t> session_id) {
     std::this_thread::sleep_for(std::chrono::milliseconds(timeout_ms / 2));
   }
   DropPending(request_id);
-  std::lock_guard lock(pending->mutex);
-  return pending->found;
+  std::vector<Found> found;
+  {
+    std::lock_guard lock(pending->mutex);
+    found = pending->found;
+  }
+
+  // Leave out hosts we cannot play with, and say why.
+  std::vector<Found> playable;
+  std::vector<Mismatch> mismatches;
+  for (auto& f : found) {
+    if (f.build == s.config.build) {
+      playable.push_back(std::move(f));
+      continue;
+    }
+    mismatches.push_back({f.from.ip, f.ad.host_name,
+                          "game version " + BuildName(f.build) + ", you have " +
+                              BuildName(s.config.build)});
+  }
+  {
+    std::lock_guard lock(s.mutex);
+    for (const auto& [ip, seen] : s.other_protocol) {
+      if (seen.first >= pending->sent_at) {
+        mismatches.push_back({ip, "", "another HarmonyRecomp version (netplay protocol " +
+                                          std::to_string(seen.second) + ", yours " +
+                                          std::to_string(kVersion) + ")"});
+      }
+    }
+    s.last_mismatches = mismatches;
+  }
+  for (const auto& m : mismatches) {
+    std::string who = m.host_name.empty() ? udp::ToString(m.ip) : m.host_name;
+    Log("left out lobby of " + who + " at " + udp::ToString(m.ip) + ": " + m.reason);
+    Notice("Lobby of " + who + " hidden: " + m.reason + ". Everyone needs the same version.");
+  }
+  // Same version but different DLC: playable, the host's stage may be missing.
+  for (const auto& f : playable) {
+    size_t missing = 0;
+    for (const auto& d : f.dlc) {
+      if (std::find(s.config.dlc.begin(), s.config.dlc.end(), d) == s.config.dlc.end()) ++missing;
+    }
+    if (missing) {
+      Notice(f.ad.host_name + " has " + std::to_string(missing) +
+             " DLC package(s) you don't have; their DLC stages and characters may not work.");
+    }
+  }
+  return playable;
+}
+
+std::vector<Mismatch> LastMismatches() {
+  std::lock_guard lock(S().mutex);
+  return S().last_mismatches;
 }
 
 QosResult Qos(uint32_t ip, uint64_t session_id, int timeout_ms) {

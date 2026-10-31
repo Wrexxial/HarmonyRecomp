@@ -166,4 +166,10 @@ void InstallDlcPackages(rex::Runtime* runtime) {
   }
 }
 
+std::vector<std::string> BuiltDlcPackages() {
+  bool found = false;
+  const auto names = BuiltPackages(&found);
+  return {names.begin(), names.end()};
+}
+
 }  // namespace harmony
