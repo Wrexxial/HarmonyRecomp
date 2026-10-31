@@ -422,6 +422,9 @@ def resolve_symlink_placeholders(repo: Path) -> int:
 # Each entry is (file, original text, replacement text). They are applied as
 # plain text replacements (not a .patch file) so CRLF checkouts on Windows
 # work too. When the set changes, step 3 rebuilds the SDK incrementally.
+# A fourth element OPTIONAL marks a patch that is skipped when it does not fit.
+OPTIONAL = "optional"
+
 SDK_PATCHES = [
     # 1) The block scanner honours [[switch_tables]] from the project config.
     #    Without this, a jump table with no bounds check (sub_8277ECF0 in this
@@ -1217,15 +1220,29 @@ SDK_PATCHES += [
 # DLLs, the indirect-call tables), so unloading them later failed with
 # "BaseHeap::Release failed because address is not a region start" (one per
 # module when leaving a DLC stage) and their memory was never given back;
-# allocations could also silently overlap. Only the executable resets it now.
+# allocations could also silently overlap. Only the executable resets it now
+# (by the DLL flag: game DLLs carry XEX_MODULE_TITLE as well).
 SDK_PATCHES += [
+    # Update for SDK folders that got the first version of this change, which
+    # missed that game DLLs carry XEX_MODULE_TITLE too (is_executable() was
+    # true for them, so nothing changed). Skipped when it does not apply.
+    (
+        "src/system/xex_module.cpp",
+        "  // before it (the executable, other DLLs, the indirect-call tables).\n"
+        "  if (is_executable()) {\n",
+        "  // before it (the executable, other DLLs, the indirect-call tables).\n"
+        "  // Game DLLs carry XEX_MODULE_TITLE too, so check the DLL flag.\n"
+        "  if (is_executable() && !(xex_header()->module_flags & XEX_MODULE_DLL_MODULE)) {\n",
+        OPTIONAL,
+    ),
     (
         "src/system/xex_module.cpp",
         "    return 0;\n  }\n\n  memory()->LookupHeap(base_address_)->Reset();\n",
         "    return 0;\n  }\n\n"
         "  // Only for the executable: a DLL must not forget the allocations made\n"
         "  // before it (the executable, other DLLs, the indirect-call tables).\n"
-        "  if (is_executable()) {\n"
+        "  // Game DLLs carry XEX_MODULE_TITLE too, so check the DLL flag.\n"
+        "  if (is_executable() && !(xex_header()->module_flags & XEX_MODULE_DLL_MODULE)) {\n"
         "    memory()->LookupHeap(base_address_)->Reset();\n"
         "  }\n",
     ),
@@ -1503,14 +1520,14 @@ SDK_PATCHES += [
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
-    for rel, old, new in SDK_PATCHES:
+    for rel, old, new, *_ in SDK_PATCHES:
         h.update(rel.encode() + b"\0" + old.encode() + b"\0" + new.encode() + b"\0")
     return h.hexdigest()[:16]
 
 
 def apply_sdk_patches() -> None:
     applied = 0
-    for rel, old, new in SDK_PATCHES:
+    for rel, old, new, *flags in SDK_PATCHES:
         path = SDK_DIR / rel
         data = path.read_bytes().decode("utf-8")
         crlf = "\r\n" in data
@@ -1519,6 +1536,8 @@ def apply_sdk_patches() -> None:
         if n in data:
             continue  # already applied
         if data.count(o) != 1:
+            if OPTIONAL in flags:
+                continue
             sys.exit(f"error: SDK patch does not fit {rel}; is the SDK at the commit in sdk-pin.txt?")
         path.write_bytes(data.replace(o, n, 1).encode("utf-8"))
         applied += 1
