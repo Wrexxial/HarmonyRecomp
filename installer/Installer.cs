@@ -46,6 +46,9 @@ namespace HarmonyRecompSetup
 
     public sealed class Installer
     {
+        // Things the player should know although the setup succeeded (e.g. DLC left out).
+        public readonly List<string> Warnings = new List<string>();
+
         public const string PackageAsset = "harmonyrecomp-package.zip";
         public const string ToolchainAsset = "harmonyrecomp-toolchain.zip";
         public const uint TitleId = 0x58410A7A;
@@ -257,7 +260,12 @@ namespace HarmonyRecompSetup
 
         void BuildLine(string line, double start)
         {
-            // build.py prints "##stage <name>"; ninja prints "[done/total] ..."
+            // build.py prints "##stage <name>" and "##warning <text>"; ninja prints "[done/total] ..."
+            if (line.StartsWith("##warning "))
+            {
+                lock (Warnings) Warnings.Add(line.Substring(10).Trim());
+                return;
+            }
             if (line.StartsWith("##stage "))
             {
                 currentStage = line.Substring(8).Trim();

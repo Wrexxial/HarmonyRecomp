@@ -180,6 +180,11 @@ def package_files(folder: Path) -> list[Path]:
 STFS_MAGICS = (b"LIVE", b"PIRS", b"CON ")
 
 
+def setup_warning(text: str) -> None:
+    """Shown by the setup on its last page (and in the log)."""
+    print(f"##warning {text}")
+
+
 def is_stfs_package(path: Path) -> bool:
     try:
         with path.open("rb") as f:
@@ -225,6 +230,14 @@ def explain_missing_packages(folder: Path) -> None:
               "update) from your console or the downloads, not their unpacked contents")
     if not archives and not extracted:
         print(f"      no Xbox 360 DLC or title update packages found in {folder}")
+    if archives:
+        setup_warning("No DLC was found: the DLC folder holds archives (.zip/.rar/.7z). "
+                      "Unpack them into the folder and run the setup again.")
+    elif extracted:
+        setup_warning("No DLC was found: the DLC folder holds DLC that was already unpacked (as "
+                      "Xenia stores it). The setup needs the original package files.")
+    else:
+        setup_warning("No DLC or title update packages were found in the DLC folder.")
 
 
 def file_stamp(path: Path) -> str:
@@ -388,6 +401,10 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
         # DLC it works, so leave it out and say why.
         print("      warning: the DLC needs the title update (the 000B0000 package from your "
               "console). It is not in the DLC folder, so the DLC is left out of this build.")
+        setup_warning(f"Your {len(included)} DLC package(s) were found but LEFT OUT: the DLC only "
+                      "works with title update 2 (the file from 58410A7A\\000B0000 of your console), "
+                      "and it was not found. Put it into the DLC folder (or next to it in 000B0000) "
+                      "and run the setup again.")
         included, modules = [], []
 
     DLC_LIST.parent.mkdir(parents=True, exist_ok=True)

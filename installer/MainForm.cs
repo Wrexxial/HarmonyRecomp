@@ -360,8 +360,11 @@ namespace HarmonyRecompSetup
             if (error == null)
             {
                 doneTitle.Text = "Ready to play";
-                doneText.Text = "Castlevania: Harmony of Despair is installed in\r\n" + dirBox.Text + "\r\n\r\n" +
-                                "Start it with \"Play\" or the shortcut. F6 opens the graphics settings, F2 shows the FPS. " +
+                string notes = "";
+                lock (installer.Warnings)
+                    foreach (string w in installer.Warnings) notes += "Note: " + w + "\r\n\r\n";
+                doneText.Text = notes + "Castlevania: Harmony of Despair is installed in\r\n" + dirBox.Text + "\r\n\r\n" +
+                                "Start it with \"Play\" or the shortcut. F6 opens the settings (graphics, controls, online), F2 shows the FPS. " +
                                 "For online co-op see the HarmonyRecomp page on GitHub.\r\n\r\n" +
                                 "To update later, run the newest setup again: your settings and saves are kept.";
             }
