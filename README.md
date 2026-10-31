@@ -104,6 +104,8 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 
 A controller (XInput, or any controller SDL supports) works out of the box, also in the game's system dialogs ("create a new save?", sign-in) and in the F6 menu: D-pad or left stick to move, A to confirm, B to go back, LB/RB to switch tabs. Its buttons can be remapped in F6 > Controls > Controller (stored as `remap_a = "B"` and so on; the dialogs always use the unmapped A/B).
 
+All connected controllers control player 1 (`merge_controllers`, F6 > Controls > Controller), so an extra device such as a wheel or the virtual pad of DS4Windows/Steam does not take over.
+
 Keyboard and mouse are off by default; switch them on in F6 > Controls > Keyboard & mouse (or `mnk_mode = true` in `harmonyrecomp.toml`):
 
 | Key | Button | Key | Button |

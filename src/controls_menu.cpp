@@ -137,6 +137,13 @@ void ControlsTab::Draw() {
 }
 
 void ControlsTab::DrawController() {
+  bool merge = IsTrue(Get("merge_controllers"));
+  if (ImGui::Checkbox("All controllers control player 1", &merge)) {
+    Set("merge_controllers", merge ? "true" : "false");
+  }
+  Help("On (recommended): any connected controller plays, also when Windows sees\n"
+       "extra devices (wheels, headsets, virtual pads of DS4Windows or Steam).\n"
+       "Off: each controller is a separate player; only the first one is player 1.");
   ImGui::TextDisabled("Which button does what in the game. Applies immediately;\n"
                       "menus like this one always use A to confirm, B to go back.");
   size_t count = 0;

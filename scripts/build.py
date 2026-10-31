@@ -1927,6 +1927,146 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 25: every controller controls player 1 (merge_controllers).
+#
+# Harmony of Despair is played with one controller per PC; the game uses the
+# player whose controller pressed Start on the title screen. With several
+# controllers connected (a wheel or headset that reports as XInput, the
+# virtual pad of DS4Windows/Steam plus the real one) the one pressing Start
+# was often player 2 or 3, who has no profile signed in: after "Press Start"
+# the title screen stayed empty forever (Discord report: DualSense next to a
+# Logitech XInput device and a virtual Xbox 360 pad). With merge_controllers
+# (default on) all controllers act as player 1 and players 2-4 report no
+# controller.
+SDK_PATCHES += [
+    (
+        "src/input/input_system.cpp",
+        "REXCVAR_DEFINE_BOOL(guide_button, false, \"Input\", \"Enable guide button pass-through\");\n",
+        "REXCVAR_DEFINE_BOOL(guide_button, false, \"Input\", \"Enable guide button pass-through\");\n"
+        "REXCVAR_DEFINE_BOOL(merge_controllers, true, \"Input\",\n"
+        "                    \"All connected controllers control player 1 (games for one player \"\n"
+        "                    \"per console); off: each controller is its own player\");\n"
+        "\n"
+        "namespace {\n"
+        "// Set while the merged calls below ask the drivers for a single user.\n"
+        "thread_local bool t_single_user = false;\n"
+        "bool MergeFor(uint32_t user_index) {\n"
+        "  return !t_single_user && REXCVAR_GET(merge_controllers) && user_index < 4;\n"
+        "}\n"
+        "struct SingleUser {\n"
+        "  SingleUser() { t_single_user = true; }\n"
+        "  ~SingleUser() { t_single_user = false; }\n"
+        "};\n"
+        "}  // namespace\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,\n"
+        "                                      X_INPUT_CAPABILITIES* out_caps) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n",
+        "X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,\n"
+        "                                      X_INPUT_CAPABILITIES* out_caps) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n"
+        "  if (MergeFor(user_index)) {\n"
+        "    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    SingleUser single;\n"
+        "    X_RESULT best = X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    for (uint32_t u = 0; u < 4; ++u) {\n"
+        "      X_RESULT r = GetCapabilities(u, flags, out_caps);\n"
+        "      if (r == X_ERROR_SUCCESS) return r;\n"
+        "      if (r != X_ERROR_DEVICE_NOT_CONNECTED) best = r;\n"
+        "    }\n"
+        "    return best;\n"
+        "  }\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n",
+        "X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n"
+        "  if (MergeFor(user_index)) {\n"
+        "    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    SingleUser single;\n"
+        "    X_RESULT best = X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    bool have = false;\n"
+        "    X_INPUT_STATE merged = {};\n"
+        "    uint32_t packets = 0;\n"
+        "    for (uint32_t u = 0; u < 4; ++u) {\n"
+        "      X_INPUT_STATE state = {};\n"
+        "      X_RESULT r = GetState(u, &state);\n"
+        "      if (r != X_ERROR_SUCCESS) {\n"
+        "        if (r != X_ERROR_DEVICE_NOT_CONNECTED) best = r;\n"
+        "        continue;\n"
+        "      }\n"
+        "      packets += static_cast<uint32_t>(state.packet_number);\n"
+        "      if (!have) {\n"
+        "        merged = state;\n"
+        "        have = true;\n"
+        "        continue;\n"
+        "      }\n"
+        "      auto& m = merged.gamepad;\n"
+        "      const auto& g = state.gamepad;\n"
+        "      m.buttons = static_cast<uint16_t>(m.buttons) | static_cast<uint16_t>(g.buttons);\n"
+        "      m.left_trigger = std::max(m.left_trigger, g.left_trigger);\n"
+        "      m.right_trigger = std::max(m.right_trigger, g.right_trigger);\n"
+        "      auto pick = [](int16_t a, int16_t b) -> int16_t {\n"
+        "        return std::abs(int(a)) >= std::abs(int(b)) ? a : b;\n"
+        "      };\n"
+        "      m.thumb_lx = pick(m.thumb_lx, g.thumb_lx);\n"
+        "      m.thumb_ly = pick(m.thumb_ly, g.thumb_ly);\n"
+        "      m.thumb_rx = pick(m.thumb_rx, g.thumb_rx);\n"
+        "      m.thumb_ry = pick(m.thumb_ry, g.thumb_ry);\n"
+        "    }\n"
+        "    if (!have) return best;\n"
+        "    // Changes whenever any controller's packet number changes.\n"
+        "    merged.packet_number = packets;\n"
+        "    if (out_state) *out_state = merged;\n"
+        "    return X_ERROR_SUCCESS;\n"
+        "  }\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "  SCOPE_profile_cpu_f(\"hid\");\n\n  bool any_connected = false;\n"
+        "  for (auto& driver : drivers_) {\n    X_RESULT result = driver->SetState(user_index, vibration);\n",
+        "  SCOPE_profile_cpu_f(\"hid\");\n"
+        "  if (MergeFor(user_index)) {\n"
+        "    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    SingleUser single;\n"
+        "    X_RESULT best = X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    for (uint32_t u = 0; u < 4; ++u) {\n"
+        "      X_RESULT r = SetState(u, vibration);\n"
+        "      if (r == X_ERROR_SUCCESS || best == X_ERROR_DEVICE_NOT_CONNECTED) best = r;\n"
+        "    }\n"
+        "    return best;\n"
+        "  }\n"
+        "\n  bool any_connected = false;\n"
+        "  for (auto& driver : drivers_) {\n    X_RESULT result = driver->SetState(user_index, vibration);\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "                                   X_INPUT_KEYSTROKE* out_keystroke) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n",
+        "                                   X_INPUT_KEYSTROKE* out_keystroke) {\n"
+        "  SCOPE_profile_cpu_f(\"hid\");\n"
+        "  if (MergeFor(user_index)) {\n"
+        "    if (user_index != 0) return X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    SingleUser single;\n"
+        "    X_RESULT best = X_ERROR_DEVICE_NOT_CONNECTED;\n"
+        "    for (uint32_t u = 0; u < 4; ++u) {\n"
+        "      X_RESULT r = GetKeystroke(u, flags, out_keystroke);\n"
+        "      if (r == X_ERROR_SUCCESS) {\n"
+        "        if (out_keystroke) out_keystroke->user_index = 0;\n"
+        "        return r;\n"
+        "      }\n"
+        "      if (r != X_ERROR_DEVICE_NOT_CONNECTED) best = r;\n"
+        "    }\n"
+        "    return best;\n"
+        "  }\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
