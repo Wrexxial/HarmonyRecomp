@@ -1249,6 +1249,34 @@ SDK_PATCHES += [
 ]
 
 
+# Update for SDK folders that got the first version of change 16 (without
+# ignoring buttons held when a dialog opens). Must come before change 16.
+SDK_PATCHES += [
+    (
+        "include/rex/ui/imgui_drawer.h",
+        "  bool gamepad_fed_ = false;\n  void FeedGamepad(ImGuiIO& io);\n",
+        "  bool gamepad_fed_ = false;\n  uint16_t gamepad_mask_ = 0;\n"
+        "  void FeedGamepad(ImGuiIO& io);\n",
+        OPTIONAL,
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "    pad = UIGamepad();\n  }\n  if (want) {\n",
+        "    pad = UIGamepad();\n  }\n"
+        "  // Buttons already held when a dialog opens (the A press that chose\n"
+        "  // \"Exit\" in the game's menu) count only after being released, so\n"
+        "  // they cannot answer the dialog before the player has seen it.\n"
+        "  if (want && !gamepad_fed_) {\n"
+        "    gamepad_mask_ = pad.buttons;\n"
+        "  }\n"
+        "  gamepad_mask_ &= pad.buttons;\n"
+        "  pad.buttons &= static_cast<uint16_t>(~gamepad_mask_);\n"
+        "  if (want) {\n",
+        OPTIONAL,
+    ),
+]
+
+
 # SDK change 16: controller support in the SDK's own dialogs (#18).
 #
 # System dialogs ("create a new save?", sign-in, text entry) and the F-key
@@ -1364,6 +1392,7 @@ SDK_PATCHES += [
         "  ImGuiContext* internal_state_ = nullptr;\n"
         "  std::function<bool(UIGamepad*)> gamepad_source_;\n"
         "  bool gamepad_fed_ = false;\n"
+        "  uint16_t gamepad_mask_ = 0;\n"
         "  void FeedGamepad(ImGuiIO& io);\n",
     ),
     (
@@ -1405,6 +1434,14 @@ SDK_PATCHES += [
         "  if (!connected) {\n"
         "    pad = UIGamepad();\n"
         "  }\n"
+        "  // Buttons already held when a dialog opens (the A press that chose\n"
+        "  // \"Exit\" in the game's menu) count only after being released, so\n"
+        "  // they cannot answer the dialog before the player has seen it.\n"
+        "  if (want && !gamepad_fed_) {\n"
+        "    gamepad_mask_ = pad.buttons;\n"
+        "  }\n"
+        "  gamepad_mask_ &= pad.buttons;\n"
+        "  pad.buttons &= static_cast<uint16_t>(~gamepad_mask_);\n"
         "  if (want) {\n"
         "    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;\n"
         "  }\n"
@@ -1650,6 +1687,20 @@ SDK_PATCHES += [
         "  bool has_opened_ = false;\n  bool shown_ = false;\n  bool retry_logged_ = false;\n"
         "  std::string title_;\n  std::string description_;\n"
         "  std::vector<std::string> buttons_;\n",
+    ),
+]
+
+
+# SDK change 21: the A press that chose "Exit" answered the next dialog.
+#
+# Change 16 now ignores controller buttons that are already held when a dialog
+# opens. With the FPS counter off the drawer detaches between dialogs and its
+# draw loop stops, so the gamepad state is reset there too.
+SDK_PATCHES += [
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  // properties.\n  ClearInput();\n",
+        "  // properties.\n  ClearInput();\n  gamepad_fed_ = false;\n",
     ),
 ]
 
