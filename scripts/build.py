@@ -1518,6 +1518,39 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 19: dialogs opened by the game could stay invisible.
+#
+# The game's system dialogs (e.g. "Any unsaved data will be lost. Are you
+# sure?" when leaving a stage) are created on a game thread, and their
+# constructor adds them to the ImGui drawer's dialog list while the UI thread
+# is drawing that list (always, with the FPS counter on). The second such
+# dialog in a session never appeared; the game waited for it and ignored all
+# input. The drawer now adds dialogs on the UI thread only, and logs when a
+# dialog is added or removed so a missing one shows up in the log.
+SDK_PATCHES += [
+    (
+        "src/ui/imgui_drawer.cpp",
+        "void ImGuiDrawer::AddDialog(ImGuiDialog* dialog) {\n  assert_not_null(dialog);\n",
+        "void ImGuiDrawer::AddDialog(ImGuiDialog* dialog) {\n  assert_not_null(dialog);\n"
+        "  // The game creates its system dialogs on its own threads; the list is\n"
+        "  // only touched on the UI thread (the caller waits for the dialog through\n"
+        "  // CallInUIThreadSynchronous, which runs after this queued call).\n"
+        "  if (!window_->app_context().IsInUIThread()) {\n"
+        "    window_->app_context().CallInUIThread([this, dialog]() { AddDialog(dialog); });\n"
+        "    return;\n"
+        "  }\n"
+        "  REXLOG_INFO(\"ImGui dialog opened ({} open)\", dialogs_.size() + 1);\n",
+    ),
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  dialogs_.erase(it);\n  DetachIfLastDialogRemoved();\n",
+        "  dialogs_.erase(it);\n"
+        "  REXLOG_INFO(\"ImGui dialog closed ({} open)\", dialogs_.size());\n"
+        "  DetachIfLastDialogRemoved();\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
