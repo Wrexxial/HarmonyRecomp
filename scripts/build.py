@@ -2057,6 +2057,21 @@ VC_RUNTIME = ("msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atom
               "concrt140.dll")
 
 
+def install_copy(src: Path, dst: Path) -> None:
+    """copy2 that explains the usual cause when the target is locked: the game
+    (or a harmonyrecomp.exe that did not exit) still has the file open."""
+    for attempt in range(5):
+        try:
+            shutil.copy2(src, dst)
+            return
+        except PermissionError:
+            if attempt == 4:
+                sys.exit(f"error: cannot replace {dst}: the file is in use.\n"
+                         "Close the game; if it is already closed, end harmonyrecomp.exe in the "
+                         "Task Manager (Details tab), then run the setup again.")
+            time.sleep(2)
+
+
 def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
                  runtime_dir: Path | None = None) -> None:
     """Put the playable game into target: executable, modules, settings, the
@@ -2066,31 +2081,31 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
     target.mkdir(parents=True, exist_ok=True)
     for pattern in RUNTIME_FILES:
         for src in out_dir.glob(pattern):
-            shutil.copy2(src, target / src.name)
+            install_copy(src, target / src.name)
     if runtime_dir:
         # Built with the portable Microsoft components: the PC may have no (or
         # an old) Visual C++ Redistributable, so the runtime goes next to the exe.
         copied = [n for n in VC_RUNTIME if (runtime_dir / n).is_file()]
         for name in copied:
-            shutil.copy2(runtime_dir / name, target / name)
+            install_copy(runtime_dir / name, target / name)
         if copied:
             print(f"      C++ runtime next to the exe: {', '.join(copied)}")
     settings = target / "harmonyrecomp.toml"
     if not settings.exists():  # keep the player's settings on updates
-        shutil.copy2(out_dir / "harmonyrecomp.toml", settings)
+        install_copy(out_dir / "harmonyrecomp.toml", settings)
     assets = ROOT / "assets"
     target_assets = target / "assets"
     if assets.resolve() != target_assets.resolve():
         if target_assets.exists():
             shutil.rmtree(target_assets)
         shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
-    shutil.copy2(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
+    install_copy(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
     built = set((out_dir / DLC_LIST_NAME).read_text().split())
     packages = [p for p in package_files(dlc_dir or DLC_DIR) if p.name in built]
     if packages:
         (target / "dlc").mkdir(exist_ok=True)
         for package in packages:
-            shutil.copy2(package, target / "dlc" / package.name)
+            install_copy(package, target / "dlc" / package.name)
     print(f"      done: start {target / 'harmonyrecomp.exe'}")
 
 
