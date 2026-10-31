@@ -1551,6 +1551,109 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 20: the game's dialogs could close unseen and hang the game.
+#
+# Leaving a stage twice through the pause menu: the second "Any unsaved data
+# will be lost" box closed itself on its first frame (Dear ImGui did not open
+# the popup again under the same name) before the waiting thread had
+# registered for the result. The game then waited forever with input blocked,
+# and closing the window left the process running.
+# - Every game dialog gets its own popup ID.
+# - A message box that did not open tries again instead of closing.
+# - A game dialog that closes before anyone waits for it stays until the
+#   waiter registers, so the result is always delivered.
+# - ~ImGuiDialog is virtual (dialogs delete themselves through the base).
+SDK_PATCHES += [
+    (
+        "include/rex/ui/imgui_dialog.h",
+        " public:\n  ~ImGuiDialog();\n",
+        " public:\n  virtual ~ImGuiDialog();\n",
+    ),
+    (
+        "include/rex/ui/imgui_dialog.h",
+        "  // Closes the dialog and returns to any waiters.\n  void Close();\n",
+        "  // Closes the dialog and returns to any waiters.\n  void Close();\n"
+        "  // The dialog is only deleted after a waiter registered with Then().\n"
+        "  void set_close_waits_for_fence(bool waits) { close_waits_for_fence_ = waits; }\n",
+    ),
+    (
+        "include/rex/ui/imgui_dialog.h",
+        "  bool has_close_pending_ = false;\n",
+        "  bool has_close_pending_ = false;\n  bool close_waits_for_fence_ = false;\n",
+    ),
+    (
+        "src/ui/imgui_dialog.cpp",
+        "  // Draw UI.\n  OnDraw(GetIO());\n\n"
+        "  // Check to see if the UI closed itself and needs to be deleted.\n"
+        "  if (has_close_pending_) {\n",
+        "  // Draw UI.\n  if (!has_close_pending_) {\n    OnDraw(GetIO());\n  }\n\n"
+        "  // Check to see if the UI closed itself and needs to be deleted. A dialog\n"
+        "  // someone waits for stays until the waiter has registered.\n"
+        "  if (has_close_pending_ && (!close_waits_for_fence_ || !waiting_fences_.empty())) {\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "  XamDialog(rex::ui::ImGuiDrawer* imgui_drawer) : rex::ui::ImGuiDialog(imgui_drawer) {}\n",
+        "  XamDialog(rex::ui::ImGuiDrawer* imgui_drawer) : rex::ui::ImGuiDialog(imgui_drawer) {\n"
+        "    set_close_waits_for_fence(true);\n"
+        "  }\n"
+        "\n"
+        "  // Own popup ID per dialog: reusing one name made Dear ImGui skip the\n"
+        "  // second popup. \"###\" keeps the visible title unchanged.\n"
+        "  static std::string UniquePopupSuffix() {\n"
+        "    static std::atomic<uint32_t> counter{0};\n"
+        "    return \"###xam_dialog_\" + std::to_string(++counter);\n"
+        "  }\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "#include <imgui.h>\n",
+        "#include <imgui.h>\n\n#include <atomic>\n#include <string>\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "    if (!title_.size()) {\n      title_ = \"Message Box\";\n    }\n",
+        "    if (!title_.size()) {\n      title_ = \"Message Box\";\n    }\n"
+        "    title_ += UniquePopupSuffix();\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "    text_ = default_text;\n    text_buffer_.resize(max_length);\n",
+        "    title_ += UniquePopupSuffix();\n"
+        "    text_ = default_text;\n    text_buffer_.resize(max_length);\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "      if (description_.size()) {\n        ImGui::Text(\"%s\", description_.c_str());\n      }\n",
+        "      shown_ = true;\n"
+        "      if (description_.size()) {\n        ImGui::Text(\"%s\", description_.c_str());\n      }\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "      ImGui::Spacing();\n      ImGui::Spacing();\n      ImGui::EndPopup();\n"
+        "    } else {\n      Close();\n    }\n",
+        "      ImGui::Spacing();\n      ImGui::Spacing();\n      ImGui::EndPopup();\n"
+        "    } else if (shown_) {\n      Close();\n    } else {\n"
+        "      // The popup did not open (yet): try again next frame instead of\n"
+        "      // answering for the player.\n"
+        "      if (!retry_logged_) {\n"
+        "        REXLOG_WARN(\"Message box '{}' did not open, retrying\", title_);\n"
+        "        retry_logged_ = true;\n"
+        "      }\n"
+        "      has_opened_ = false;\n"
+        "    }\n",
+    ),
+    (
+        "src/kernel/xam/xam_ui.cpp",
+        "  bool has_opened_ = false;\n  std::string title_;\n  std::string description_;\n"
+        "  std::vector<std::string> buttons_;\n",
+        "  bool has_opened_ = false;\n  bool shown_ = false;\n  bool retry_logged_ = false;\n"
+        "  std::string title_;\n  std::string description_;\n"
+        "  std::vector<std::string> buttons_;\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
