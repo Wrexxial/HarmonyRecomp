@@ -1209,6 +1209,29 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 15: loading a DLL module wiped the image heap's bookkeeping.
+#
+# XexModule::ReadImage reset the whole 0x80000000 heap's page table before
+# decoding every module - meant for the executable, but run for each DLL too.
+# Every DLL load forgot all earlier allocations there (the executable, other
+# DLLs, the indirect-call tables), so unloading them later failed with
+# "BaseHeap::Release failed because address is not a region start" (one per
+# module when leaving a DLC stage) and their memory was never given back;
+# allocations could also silently overlap. Only the executable resets it now.
+SDK_PATCHES += [
+    (
+        "src/system/xex_module.cpp",
+        "    return 0;\n  }\n\n  memory()->LookupHeap(base_address_)->Reset();\n",
+        "    return 0;\n  }\n\n"
+        "  // Only for the executable: a DLL must not forget the allocations made\n"
+        "  // before it (the executable, other DLLs, the indirect-call tables).\n"
+        "  if (is_executable()) {\n"
+        "    memory()->LookupHeap(base_address_)->Reset();\n"
+        "  }\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new in SDK_PATCHES:
