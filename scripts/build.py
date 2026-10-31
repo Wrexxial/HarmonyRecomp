@@ -1731,6 +1731,31 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 23: the FPS counter no longer costs frame rate.
+#
+# While any ImGui dialog existed the drawer asked for a new UI paint after
+# every paint, so the UI thread redrew the full guest image plus the overlay
+# at the monitor refresh rate (e.g. 144 times a second at 3x resolution) on
+# top of the game's own frames. On slower GPUs the FPS counter alone dropped
+# the game to ~15 FPS (reported on Reddit). Display-only dialogs (FPS counter,
+# frame times) are now drawn with the game's frames only; dialogs that take
+# input still repaint continuously so they react while the game waits.
+SDK_PATCHES += [
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  if (!dialogs_.empty()) {\n"
+        "    // Repaint (and handle input) continuously if still active.\n"
+        "    presenter_->RequestUIPaintFromUIThread();\n"
+        "  }\n",
+        "  if (mouse_dialog_count_.load() > 0) {\n"
+        "    // Repaint (and handle input) continuously while a dialog takes input.\n"
+        "    // Display-only ones (FPS counter) are drawn with the game's frames.\n"
+        "    presenter_->RequestUIPaintFromUIThread();\n"
+        "  }\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
