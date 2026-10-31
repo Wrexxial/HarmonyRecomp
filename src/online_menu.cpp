@@ -262,7 +262,7 @@ void OnlineTab::DrawRooms() {
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::BeginDisabled(busy);
-  const bool refresh = ImGui::Button("Public rooms");
+  const bool refresh = ImGui::Button("List public rooms");
   ImGui::EndDisabled();
 
   auto run = [async](std::function<void()> work) {
