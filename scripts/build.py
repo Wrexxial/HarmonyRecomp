@@ -1756,6 +1756,103 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 24: no controller input is lost between two game frames.
+#
+# The SDL driver reads the controller on the UI thread whenever that thread
+# gets to it, not when the game asks. If two direction changes landed between
+# two of the game's reads, the game only saw the last one: a quick 360 motion
+# lost a diagonal and turned into an uppercut (reported by the community;
+# fine at 120 FPS, where the game reads twice as often, and much better with
+# input_backend = "xinput"). Every change of the buttons or of the stick /
+# trigger direction is now queued and handed to the game one per read, in
+# order, like a console polling the pad every frame. Analog values within a
+# direction do not queue anything; the queue is short (8 entries, at most
+# 100 ms old) so lag stays small.
+SDL_INPUT_HISTORY = 8
+SDK_PATCHES += [
+    (
+        "include/rex/input/sdl/sdl_input_driver.h",
+        "#include <atomic>\n",
+        "#include <atomic>\n#include <deque>\n",
+    ),
+    (
+        "include/rex/input/sdl/sdl_input_driver.h",
+        "  std::array<KeystrokeState, HID_SDL_USER_COUNT> keystroke_states_;\n",
+        "  std::array<KeystrokeState, HID_SDL_USER_COUNT> keystroke_states_;\n"
+        "  // Controller states between two GetState calls (one per change of the\n"
+        "  // buttons or of the stick/trigger direction), handed out one per call.\n"
+        "  struct HistoryEntry {\n"
+        "    uint64_t ticks_ms;\n"
+        "    X_INPUT_GAMEPAD gamepad;\n"
+        "  };\n"
+        "  std::array<std::deque<HistoryEntry>, HID_SDL_USER_COUNT> state_history_;\n"
+        "  std::array<uint64_t, HID_SDL_USER_COUNT> history_signature_{};\n"
+        "  void RecordHistoryLocked();\n",
+    ),
+    (
+        "src/input/sdl/sdl_input_driver.cpp",
+        "  for (const auto& event : events) {\n    ProcessEventLocked(event);\n  }\n  return guard;\n}\n",
+        "  for (const auto& event : events) {\n    ProcessEventLocked(event);\n    RecordHistoryLocked();\n  }\n"
+        "  return guard;\n}\n"
+        "\n"
+        "void SDLInputDriver::RecordHistoryLocked() {\n"
+        "  for (size_t i = 0; i < controllers_.size(); ++i) {\n"
+        "    auto& history = state_history_[i];\n"
+        "    const auto& controller = controllers_[i];\n"
+        "    if (!controller.sdl) {\n"
+        "      history.clear();\n"
+        "      history_signature_[i] = 0;\n"
+        "      continue;\n"
+        "    }\n"
+        "    const auto& gamepad = controller.state.gamepad;\n"
+        "    const uint64_t signature =\n"
+        "        uint64_t(uint16_t(gamepad.buttons)) | (AnalogToKeyfield(gamepad) << 16) | (1ull << 63);\n"
+        "    if (signature == history_signature_[i]) {\n"
+        "      continue;\n"
+        "    }\n"
+        "    history_signature_[i] = signature;\n"
+        "    if (history.size() >= " + str(SDL_INPUT_HISTORY) + ") {\n"
+        "      history.pop_front();\n"
+        "    }\n"
+        "    history.push_back({SDL_GetTicks(), gamepad});\n"
+        "  }\n"
+        "}\n",
+    ),
+    (
+        "src/input/sdl/sdl_input_driver.cpp",
+        "  // Make sure packet_number is only incremented by 1, even if there have been\n",
+        "  // Hand out the states between the last read and now one at a time, so a\n"
+        "  // quick motion keeps every direction it passed through.\n"
+        "  X_INPUT_GAMEPAD reported = controller->state.gamepad;\n"
+        "  auto& history = state_history_[user_index];\n"
+        "  if (!is_active) {\n"
+        "    history.clear();\n"
+        "  } else {\n"
+        "    // Older entries were never read in time (loading screen, pause):\n"
+        "    // replaying them now would press buttons the player has let go.\n"
+        "    const uint64_t now = SDL_GetTicks();\n"
+        "    while (!history.empty() && now - history.front().ticks_ms > 100) {\n"
+        "      history.pop_front();\n"
+        "    }\n"
+        "  }\n"
+        "  if (is_active && !history.empty()) {\n"
+        "    reported = history.front().gamepad;\n"
+        "    history.pop_front();\n"
+        "    controller->state_changed = true;\n"
+        "  }\n"
+        "\n"
+        "  // Make sure packet_number is only incremented by 1, even if there have been\n",
+    ),
+    (
+        "src/input/sdl/sdl_input_driver.cpp",
+        "  std::memcpy(out_state, &controller->state, sizeof(*out_state));\n  if (!is_active) {\n",
+        "  std::memcpy(out_state, &controller->state, sizeof(*out_state));\n"
+        "  out_state->gamepad = reported;\n"
+        "  if (!is_active) {\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
