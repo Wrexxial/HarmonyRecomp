@@ -4,6 +4,8 @@ A static recompilation of **Castlevania: Harmony of Despair** (Xbox Live Arcade,
 
 The PowerPC code of `default.xex` and the character modules is translated to C++ at build time and compiled natively for x86-64. Graphics, audio and the Xbox system services come from the ReXGlue runtime (derived from [Xenia](https://github.com/xenia-project/xenia)).
 
+Questions, help and news: **[Discord server](https://discord.gg/PEYdJ72aH)**
+
 > **This repository contains no game code or data.** You need your own copy of the game, dumped from your own console or purchase. Never share `game/`, `assets/`, `dlc/` or `generated/`: they contain the game or code derived from it.
 
 ## Screenshots
