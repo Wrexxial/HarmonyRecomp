@@ -177,6 +177,56 @@ def package_files(folder: Path) -> list[Path]:
                   if p.is_file() and not p.name.startswith(".") and p.suffix.lower() != ".txt")
 
 
+STFS_MAGICS = (b"LIVE", b"PIRS", b"CON ")
+
+
+def is_stfs_package(path: Path) -> bool:
+    try:
+        with path.open("rb") as f:
+            return f.read(4) in STFS_MAGICS
+    except OSError:
+        return False
+
+
+def find_packages(folder: Path, max_depth: int = 5) -> list[Path]:
+    """Xbox 360 packages (DLC, title update) anywhere below `folder`.
+
+    Players select all kinds of folders: 00000002 itself, 58410A7A (with
+    00000002 and 000B0000 inside), a Content folder of a console dump or a
+    folder of their own. Same file name twice: the first one wins.
+    """
+    if not folder.is_dir():
+        return []
+    found: dict[str, Path] = {}
+    base_depth = len(folder.resolve().parts)
+    for root, dirs, files in os.walk(folder):
+        depth = len(Path(root).resolve().parts) - base_depth
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".")) if depth < max_depth else []
+        for name in sorted(files):
+            path = Path(root) / name
+            if name.startswith(".") or name in found or not is_stfs_package(path):
+                continue
+            found[name] = path
+    return sorted(found.values(), key=lambda p: p.name)
+
+
+def explain_missing_packages(folder: Path) -> None:
+    """No package found: say what the folder holds instead."""
+    archives = [p for p in folder.rglob("*")
+                if p.is_file() and p.suffix.lower() in (".zip", ".rar", ".7z")][:3]
+    if archives:
+        print("      the DLC folder holds archives (" + ", ".join(a.name for a in archives) +
+              "): unpack them into the folder first")
+    extracted = [d for d in folder.rglob("*") if d.is_dir() and (d / "data").is_dir()][:3]
+    if extracted:
+        print("      the DLC folder holds already unpacked DLC (e.g. " + extracted[0].name +
+              ", as Xenia stores installed content). The setup needs the original package "
+              "files: the files in 58410A7A\\00000002 (DLC) and 58410A7A\\000B0000 (title "
+              "update) from your console or the downloads, not their unpacked contents")
+    if not archives and not extracted:
+        print(f"      no Xbox 360 DLC or title update packages found in {folder}")
+
+
 def file_stamp(path: Path) -> str:
     return f"{path.stat().st_size}:{int(path.stat().st_mtime)}:{path.name}"
 
@@ -260,7 +310,12 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
     known = base_guest_paths()
     modules: list[tuple[str, str, str]] = []  # (guest path, file path, name)
     included: list[str] = []
-    for package_path in package_files(dlc_dir):
+    packages = find_packages(dlc_dir)
+    if dlc_dir.is_dir():
+        print(f"      {len(packages)} package(s) found in {dlc_dir}")
+        if not packages:
+            explain_missing_packages(dlc_dir)
+    for package_path in packages:
         try:
             package = extract_game.Package(package_path)
         except (OSError, RuntimeError) as err:
@@ -272,6 +327,8 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
         if package.content_type == CONTENT_TYPE_TITLE_UPDATE:
             updates.append((package_path.stat().st_size, package_path))
             continue
+        if package.content_type == 0x000D0000:
+            continue  # the game package itself, selected along with the DLC folder
         if package.content_type != extract_game.CONTENT_TYPE_MARKETPLACE:
             print(f"      skipping {package_path.name}: not a DLC package "
                   f"(content type {package.content_type:08X})")
@@ -2209,7 +2266,7 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
         shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
     install_copy(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
     built = set((out_dir / DLC_LIST_NAME).read_text().split())
-    packages = [p for p in package_files(dlc_dir or DLC_DIR) if p.name in built]
+    packages = [p for p in find_packages(dlc_dir or DLC_DIR) if p.name in built]
     if packages:
         (target / "dlc").mkdir(exist_ok=True)
         for package in packages:
