@@ -1343,8 +1343,8 @@ SDK_PATCHES += [
     ),
     (
         "include/rex/ui/imgui_drawer.h",
-        "  std::atomic<int> mouse_dialog_count_{0};\n",
-        "  std::atomic<int> mouse_dialog_count_{0};\n"
+        "  ImGuiContext* internal_state_ = nullptr;\n",
+        "  ImGuiContext* internal_state_ = nullptr;\n"
         "  std::function<bool(UIGamepad*)> gamepad_source_;\n"
         "  bool gamepad_fed_ = false;\n"
         "  void FeedGamepad(ImGuiIO& io);\n",
@@ -1451,6 +1451,52 @@ SDK_PATCHES += [
         "          ImGui::SetKeyboardFocusHere();\n"
         "        }\n"
         "        if (ImGui::Button(buttons_[i].c_str())) {\n",
+    ),
+]
+
+
+# SDK change 17: a hook to remap controller buttons (in-game Controls menu).
+#
+# The app can install a filter that rewrites each physical controller's state
+# before the game sees it. Keyboard/mouse emulation is not filtered: it has
+# its own key bindings.
+SDK_PATCHES += [
+    (
+        "include/rex/input/input_driver.h",
+        "  void set_is_active_callback(std::function<bool()> is_active_callback) {\n",
+        "  // False for drivers that emulate a controller (keyboard/mouse).\n"
+        "  virtual bool IsPhysicalController() const { return true; }\n\n"
+        "  void set_is_active_callback(std::function<bool()> is_active_callback) {\n",
+    ),
+    (
+        "include/rex/input/mnk/mnk_input_driver.h",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) override;\n",
+        "  X_RESULT GetState(uint32_t user_index, X_INPUT_STATE* out_state) override;\n"
+        "  bool IsPhysicalController() const override { return false; }\n",
+    ),
+    (
+        "include/rex/input/input_system.h",
+        "  void SetActiveCallback(std::function<bool()> callback);\n",
+        "  void SetActiveCallback(std::function<bool()> callback);\n"
+        "  // Rewrites each physical controller's state before the game sees it\n"
+        "  // (button remapping). Set once at startup.\n"
+        "  using GamepadFilter = std::function<void(uint32_t user_index, X_INPUT_GAMEPAD* gamepad)>;\n"
+        "  void SetGamepadFilter(GamepadFilter filter) { gamepad_filter_ = std::move(filter); }\n",
+    ),
+    (
+        "include/rex/input/input_system.h",
+        "  std::vector<std::unique_ptr<InputDriver>> drivers_;\n",
+        "  std::vector<std::unique_ptr<InputDriver>> drivers_;\n"
+        "  GamepadFilter gamepad_filter_;\n",
+    ),
+    (
+        "src/input/input_system.cpp",
+        "    if (result == X_ERROR_SUCCESS) {\n      if (first_result) {\n",
+        "    if (result == X_ERROR_SUCCESS) {\n"
+        "      if (gamepad_filter_ && driver->IsPhysicalController()) {\n"
+        "        gamepad_filter_(user_index, &state.gamepad);\n"
+        "      }\n"
+        "      if (first_result) {\n",
     ),
 ]
 

@@ -149,7 +149,7 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                           ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
   ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
-  if (!ImGui::Begin("Graphics (F6 to close)", nullptr,
+  if (!ImGui::Begin("Settings (F6 to close)", nullptr,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::End();
     return;
@@ -165,6 +165,38 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
     ImGui::Separator();
   }
 
+  if (ImGui::BeginTabBar("##settings")) {
+    if (ImGui::BeginTabItem("Graphics")) {
+      DrawGraphics();
+      ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Controls")) {
+      controls_.Draw();
+      ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Online")) {
+      online_.Draw();
+      ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+  }
+
+  ImGui::Spacing();
+  ImGui::Separator();
+  if (ImGui::Button("Save")) {
+    rex::cvar::SaveConfig(config_path_);
+    status_ = "saved to " + config_path_.filename().string();
+    SetConfigError({});
+  }
+  if (!status_.empty()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", status_.c_str());
+  }
+
+  ImGui::End();
+}
+
+void GraphicsMenuDialog::DrawGraphics() {
   ImGui::TextDisabled("Applies immediately");
   bool vsync = GetBool("vsync");
   // The SDK's "vsync" drives the game's own frame clock (guest vblank) and
@@ -221,20 +253,6 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
     SetBool("fullscreen", fullscreen);
   }
   RestartHint(start_fullscreen_, "fullscreen");
-
-  ImGui::Spacing();
-  ImGui::Separator();
-  if (ImGui::Button("Save")) {
-    rex::cvar::SaveConfig(config_path_);
-    status_ = "saved to " + config_path_.filename().string();
-    SetConfigError({});
-  }
-  if (!status_.empty()) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", status_.c_str());
-  }
-
-  ImGui::End();
 }
 
 }  // namespace harmony

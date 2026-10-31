@@ -23,6 +23,7 @@
 #include <rex/ui/keybinds.h>
 
 
+#include "controller_remap.h"
 #include "crash_log.h"
 #include "dlc.h"
 #include "game_fixes.h"
@@ -102,6 +103,7 @@ class HarmonyrecompApp : public rex::ReXApp {
   // Runtime and kernel exist now; start the LAN lobby service if netplay is on.
   void OnPostSetup() override {
     harmony::InstallGameFixes(runtime());
+    harmony::InstallControllerRemap(runtime());
     harmony::netplay::Startup();
   }
 
@@ -134,7 +136,7 @@ class HarmonyrecompApp : public rex::ReXApp {
 
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
     drawer_ = drawer;
-    rex::ui::RegisterBind("bind_graphics_menu", "F6", "Toggle graphics menu",
+    rex::ui::RegisterBind("bind_graphics_menu", "F6", "Toggle settings menu",
                           [this] { ToggleGraphicsMenu(); });
     rex::ui::RegisterBind("bind_fps_counter", "F2", "Toggle FPS counter",
                           [this] { SetFpsCounter(!harmony::ShowFps()); });

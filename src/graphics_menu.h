@@ -14,6 +14,8 @@
 
 #include <rex/ui/imgui_dialog.h>
 
+#include "settings_tabs.h"
+
 namespace harmony {
 
 // Value of the show_fps setting (saved in harmonyrecomp.toml).
@@ -45,8 +47,8 @@ class FpsCounterDialog final : public rex::ui::ImGuiDialog {
   double fps_ = 0.0;
 };
 
-// Compact graphics settings window. Changes apply to the running session where
-// the renderer supports it; "Save" writes them to harmonyrecomp.toml.
+// Settings window (F6) with Graphics, Controls and Online tabs. Changes apply to
+// the running session where possible; "Save" writes them to harmonyrecomp.toml.
 class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
  public:
   using ToggleFps = std::function<void(bool)>;
@@ -57,6 +59,8 @@ class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
   void OnDraw(ImGuiIO& io) override;
 
  private:
+  void DrawGraphics();
+
   std::filesystem::path config_path_;
   ToggleFps toggle_fps_;
   std::string status_;
@@ -64,6 +68,8 @@ class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
   std::string start_scale_;
   std::string start_aa_;
   std::string start_fullscreen_;
+  ControlsTab controls_;
+  OnlineTab online_;
 };
 
 }  // namespace harmony
