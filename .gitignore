@@ -29,4 +29,3 @@ __pycache__/
 .idea/
 generated/dlc_packages.txt
 generated/dlc_skipped.txt
-server/hrnp_admin.json

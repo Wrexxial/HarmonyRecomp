@@ -42,24 +42,8 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 sudo systemctl enable --now hrnp
-journalctl -u hrnp -f              # log: clients, rooms
+journalctl -u hrnp -f              # log: clients, rooms, a stats line every 5 min
 ```
-
-## Admin tool (from your own PC)
-
-`HRNP-Admin.bat` (or `python hrnp_admin.py`) connects over SSH and shows a menu:
-
-- **Status**: players and rooms online now, and for the last 24 hours: players, game
-  versions, rooms, joins, how many games needed the relay, connections lost, problems.
-- **Save the log** as `server-log_<date>.txt` (into the `Issues` folder next to the repo
-  when it exists). It contains player names and IP addresses: keep it to yourself.
-- **Live log**, **Update the server** (uploads `hrnp_server.py`, restarts; asks first when
-  players are online), **Restart**.
-- **SSH key**: enter the password once more, then never again.
-
-Server address and SSH user are asked on the first start (`hrnp_admin.json`). Needs
-Python and the ssh client (built into Windows 10/11). The server writes a `stats:` line
-every 5 minutes; `systemctl kill -s USR1 hrnp` writes one at once.
 
 ## Using it in the game
 

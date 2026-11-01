@@ -352,7 +352,7 @@ class Server:
                 self.drop_client(client, "timed out")
 
     def log_stats(self, seconds: float) -> None:
-        """One "stats:" line; the admin tool (hrnp_admin.py) reads these."""
+        """One "stats:" line with the current numbers."""
         public = sum(1 for room in self.rooms.values() if room.public)
         builds: dict[str, int] = {}
         for client in self.by_token.values():
@@ -406,7 +406,7 @@ def main() -> None:
     log.info("HarmonyRecomp online server on UDP %s:%d", args.bind, args.port)
     server = Server(sock)
     if hasattr(signal, "SIGUSR1"):
-        # `systemctl kill -s USR1 hrnp`: log a stats line now (used by hrnp_admin.py).
+        # `systemctl kill -s USR1 hrnp`: log a stats line now.
         signal.signal(signal.SIGUSR1, lambda *_: setattr(server, "stats_wanted", True))
     server.run()
 
