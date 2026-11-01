@@ -267,6 +267,11 @@ def environment(root: Path) -> dict:
     }
 
 
+# Oldest MSVC toolset that can link against the prebuilt SDK (built by CI with
+# 14.44): newer STL headers call helpers that older import libraries lack.
+MIN_MSVC = (14, 44)
+
+
 def detect() -> bool:
     """True if Visual Studio with the C++ x64 tools and a Windows 10/11 SDK exist."""
     if os.name != "nt":
@@ -280,7 +285,22 @@ def detect() -> bool:
                              "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                              "-property", "installationPath"],
                             capture_output=True, text=True, check=False)
-    if not result.stdout.strip():
+    install = result.stdout.strip().splitlines()[0]
+    if not install:
+        return False
+    # The prebuilt SDK uses STL helpers that only newer toolsets provide
+    # (e.g. __std_find_first_of_trivial_pos_1): an older Visual Studio fails to
+    # link the game. Then the portable components are used instead.
+    version_file = Path(install) / "VC" / "Auxiliary" / "Build" / "Microsoft.VCToolsVersion.default.txt"
+    try:
+        version = version_file.read_text().strip()
+        parts = tuple(int(x) for x in version.split(".")[:2])
+    except (OSError, ValueError):
+        log("Visual Studio found, but its C++ tools version is unknown")
+        return False
+    if parts < MIN_MSVC:
+        log(f"Visual Studio C++ tools {version} are older than {MIN_MSVC[0]}.{MIN_MSVC[1]} "
+            "(the version the prebuilt SDK needs): using the portable ones")
         return False
     import winreg  # noqa: PLC0415 (Windows only)
     try:
