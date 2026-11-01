@@ -2341,8 +2341,14 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
     print(f"[5/5] Building the game ({preset})")
     progress("compile")
     fix_future_mtimes(ROOT, prefix)
+    # A setup package names its release (release.txt next to src/, written by
+    # scripts/package_release.py); the game shows it and checks for updates.
+    release_file = ROOT.parent / "release.txt"
+    version = release_file.read_text().strip() if release_file.is_file() else "dev"
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", version):
+        version = "dev"
     configure = ["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}",
-                 f"-DCMAKE_BUILD_TYPE={config}"]
+                 f"-DCMAKE_BUILD_TYPE={config}", f"-DHARMONYRECOMP_VERSION={version}"]
     run(configure, cwd=ROOT)
     # When the compiler found on PATH changes (e.g. another LLVM installed or
     # PATH reordered), CMake throws the cache away and configures again without

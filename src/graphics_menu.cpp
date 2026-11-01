@@ -7,6 +7,8 @@
 #include <utility>
 
 #include <imgui.h>
+
+#include "update_check.h"
 #include <rex/cvar.h>
 
 REXCVAR_DEFINE_BOOL(show_fps, false, "HarmonyRecomp", "Show the FPS counter (toggle with F2)");
@@ -156,10 +158,18 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                           ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
   ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
-  if (!ImGui::Begin("Settings (F6 to close)", nullptr,
+  const std::string title =
+      std::string("Settings - HarmonyRecomp ") + BuildVersion() + " (F6 to close)###settings";
+  if (!ImGui::Begin(title.c_str(), nullptr,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::End();
     return;
+  }
+
+  if (const std::string update = AvailableUpdate(); !update.empty()) {
+    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "Update available: %s", update.c_str());
+    ImGui::TextDisabled("Run the new setup from github.com/Wrexxial/HarmonyRecomp/releases");
+    ImGui::Separator();
   }
 
   if (!ConfigError().empty()) {

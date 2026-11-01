@@ -15,6 +15,7 @@ set(HARMONYRECOMP_SOURCES
     src/main.cpp
     src/graphics_menu.cpp
     src/notice.cpp
+    src/update_check.cpp
     src/controller_remap.cpp
     src/controls_menu.cpp
     src/online_menu.cpp
@@ -41,7 +42,7 @@ rexglue_setup_target(harmonyrecomp)
 # Netplay lobby service (src/netplay/udp.cpp): Winsock and adapter enumeration;
 # winmm for the 1 ms timer resolution (harmonyrecomp_app.h).
 if(WIN32)
-    target_link_libraries(harmonyrecomp PRIVATE ws2_32 iphlpapi winmm)
+    target_link_libraries(harmonyrecomp PRIVATE ws2_32 iphlpapi winmm winhttp)
     # Symbol map, to resolve the offsets in logs/crash_*.txt.
     target_link_options(harmonyrecomp PRIVATE "LINKER:/MAP:harmonyrecomp.map")
 endif()
@@ -52,6 +53,11 @@ endif()
 # other characters. 0x8C000000-0x8CD5E990 is free in the 0x80000000 guest heap.
 # Needs the table_base SDK change applied by scripts/build.py.
 target_compile_definitions(harmonyrecomp PRIVATE REX_FUNC_TABLE_BASE=0x8C000000ull)
+
+# Release this build belongs to (scripts/build.py passes the tag of the setup
+# package; "dev" for own builds). Shown in F6 and used by the update check.
+set(HARMONYRECOMP_VERSION "dev" CACHE STRING "HarmonyRecomp release tag")
+target_compile_definitions(harmonyrecomp PRIVATE HARMONYRECOMP_VERSION="${HARMONYRECOMP_VERSION}")
 
 # Give every DLL module its own indirect-call table as well. By default a DLL's
 # table sits right after its image, which overlaps the next module's fixed load

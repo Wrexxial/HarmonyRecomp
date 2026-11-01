@@ -30,6 +30,7 @@
 #include "graphics_menu.h"
 #include "netplay/netplay.h"
 #include "notice.h"
+#include "update_check.h"
 
 class HarmonyrecompApp : public rex::ReXApp {
  public:
@@ -149,6 +150,8 @@ class HarmonyrecompApp : public rex::ReXApp {
     if (harmony::ShowFps()) {
       SetFpsCounter(true);
     }
+    REXLOG_INFO("HarmonyRecomp {}", harmony::BuildVersion());
+    harmony::StartUpdateCheck();
   }
 
   // Runs before the SDK tears down the ImGui drawer.

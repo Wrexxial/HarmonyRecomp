@@ -24,6 +24,7 @@ using Clock = std::chrono::steady_clock;
 struct Message {
   std::string text;
   Clock::time_point shown_at;
+  double seconds = kShowSeconds;
 };
 
 class NoticeDialog;
@@ -47,10 +48,12 @@ class NoticeDialog final : public rex::ui::ImGuiDialog {
     {
       std::lock_guard lock(g_mutex);
       const auto now = Clock::now();
-      while (!g_messages.empty() &&
-             std::chrono::duration<double>(now - g_messages.front().shown_at).count() >
-                 kShowSeconds) {
-        g_messages.pop_front();
+      for (auto it = g_messages.begin(); it != g_messages.end();) {
+        if (std::chrono::duration<double>(now - it->shown_at).count() > it->seconds) {
+          it = g_messages.erase(it);
+        } else {
+          ++it;
+        }
       }
       messages = g_messages;
     }
@@ -109,7 +112,7 @@ void Shutdown() {
   g_dialog = nullptr;
 }
 
-void Post(std::string message) {
+void Post(std::string message, double seconds) {
   REXLOG_INFO("[notice] {}", message);
   rex::ui::WindowedAppContext* app_context = nullptr;
   {
@@ -117,7 +120,7 @@ void Post(std::string message) {
     if (!g_drawer || !g_app_context) {
       return;
     }
-    g_messages.push_back({std::move(message), Clock::now()});
+    g_messages.push_back({std::move(message), Clock::now(), seconds});
     while (g_messages.size() > kMaxShown) {
       g_messages.pop_front();
     }

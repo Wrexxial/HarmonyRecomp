@@ -44,7 +44,7 @@ If the setup stops with "the rexglue tool could not start", install the latest [
 
 Nothing of the game is downloaded: everything is built from your own copy on your own PC.
 
-**Updating:** download the newest `HarmonyRecomp-Setup.exe` and run it with the same install folder; your settings and saves are kept. (Setups before v0.3.3 could reuse an old download: if an update to v0.3.3 or newer seems to change nothing, delete the `.setup` folder in the install folder and run it again.) If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
+**Updating:** the game tells you at startup when a newer release is out (it asks GitHub once; `check_for_updates = false` switches that off). Download the newest `HarmonyRecomp-Setup.exe` and run it with the same install folder; your settings and saves are kept. (Setups before v0.3.3 could reuse an old download: if an update to v0.3.3 or newer seems to change nothing, delete the `.setup` folder in the install folder and run it again.) If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
 
 The rest of this page is for building by hand and for developers.
 
@@ -97,7 +97,7 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F2 | FPS counter |
 | F3 | SDK debug overlay (frame times) |
 | F4 | All SDK runtime settings |
-| F6 | Settings menu: graphics, controls, online ("Save" writes `harmonyrecomp.toml`) |
+| F6 | Settings menu: graphics, controls, online ("Save" writes `harmonyrecomp.toml`); its title shows your HarmonyRecomp version |
 | `^` | Log console |
 
 ### Controls

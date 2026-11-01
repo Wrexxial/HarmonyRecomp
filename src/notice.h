@@ -17,6 +17,7 @@ namespace harmony::notice {
 
 void Init(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* app_context);
 void Shutdown();  // on the UI thread, before the drawer goes away
-void Post(std::string message);
+// Shown for `seconds` (default 8).
+void Post(std::string message, double seconds = 8.0);
 
 }  // namespace harmony::notice
