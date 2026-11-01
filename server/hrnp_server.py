@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import random
+import signal
 import socket
 import struct
 import time
@@ -51,6 +52,7 @@ CODE_LENGTH = 6
 MAX_LIST = 20
 MAX_RELAY = 1400
 MAX_ROOM_MEMBERS = 16
+STATS_INTERVAL = 300.0  # seconds between "stats:" log lines (also on SIGUSR1)
 
 log = logging.getLogger("hrnp")
 
@@ -114,6 +116,7 @@ class Client:
         self.local = local  # [(ip int, port)]
         self.last_seen = time.monotonic()
         self.rooms: set[str] = set()
+        self.relayed_bytes = 0  # game data this player sent through the relay
 
     @property
     def public(self):
@@ -130,6 +133,9 @@ class Room:
         self.max = maximum
         self.build = host.build
         self.members: dict[int, Client] = {host.vip: host}
+        self.opened_at = time.monotonic()
+        self.joined = 0  # players that connected with the code / from the list
+        self.relayed = False  # some game data went through the relay
 
 
 class Server:
@@ -141,6 +147,11 @@ class Server:
         self.rooms: dict[str, Room] = {}
         self.hosted: dict[int, str] = {}  # host vip -> code
         self.next_vip = 1
+        self.stats_wanted = False  # set by SIGUSR1
+        self.peak_clients = 0
+        self.relay_packets = 0  # since the last stats line
+        self.relay_bytes = 0
+        self.relay_players: set[int] = set()
 
     # ---- helpers -----------------------------------------------------------
 
@@ -180,12 +191,19 @@ class Server:
         self.send(a.addr, self.peer_message(b))
         self.send(b.addr, self.peer_message(a))
 
+    def log_room_closed(self, room: Room, why: str) -> None:
+        minutes = (time.monotonic() - room.opened_at) / 60.0
+        log.info("room %s closed%s after %.0f min, %d joined, %s", room.code, why, minutes,
+                 room.joined, "relay used" if room.relayed else "no relay")
+
     def drop_client(self, client: Client, why: str) -> None:
-        log.info("client %s %s (%s) gone: %s", ip_str(client.vip), client.name, client.addr, why)
+        relayed = f", relayed {client.relayed_bytes // 1024} KB" if client.relayed_bytes else ""
+        log.info("client %s %s (%s) gone: %s%s", ip_str(client.vip), client.name, client.addr,
+                 why, relayed)
         code = self.hosted.pop(client.vip, None)
-        if code:
-            self.rooms.pop(code, None)
-            log.info("room %s closed (host gone)", code)
+        room = self.rooms.pop(code, None) if code else None
+        if room:
+            self.log_room_closed(room, " (host gone)")
         for code in list(client.rooms):
             room = self.rooms.get(code)
             if room:
@@ -196,8 +214,9 @@ class Server:
 
     def close_room(self, client: Client) -> None:
         code = self.hosted.pop(client.vip, None)
-        if code and self.rooms.pop(code, None):
-            log.info("room %s closed", code)
+        room = self.rooms.pop(code, None) if code else None
+        if room:
+            self.log_room_closed(room, "")
 
     # ---- packets -----------------------------------------------------------
 
@@ -251,6 +270,7 @@ class Server:
             self.by_token[token] = client
             self.by_vip[client.vip] = client
             log.info("client %s %s from %s, game %s", ip_str(client.vip), name, addr, build)
+            self.peak_clients = max(self.peak_clients, len(self.by_token))
         self.by_addr[addr] = client
         client.last_seen = time.monotonic()
         pub_ip, pub_port = client.public
@@ -304,6 +324,8 @@ class Server:
         for member in list(room.members.values()):
             if member is not client:
                 self.introduce(client, member)
+        if client.vip not in room.members:
+            room.joined += 1
         room.members[client.vip] = client
         client.rooms.add(code)
         log.info("%s connected to room %s (%d members)", client.name, code, len(room.members))
@@ -316,6 +338,12 @@ class Server:
         if dst is None or len(payload) > MAX_RELAY or not (client.rooms & dst.rooms):
             return  # only between players of a common room
         self.send(dst.addr, header(RELAYED) + struct.pack(">I", client.vip) + payload)
+        client.relayed_bytes += len(payload)
+        self.relay_packets += 1
+        self.relay_bytes += len(payload)
+        self.relay_players.add(client.vip)
+        for code in client.rooms & dst.rooms:
+            self.rooms[code].relayed = True
 
     def expire(self) -> None:
         now = time.monotonic()
@@ -323,9 +351,25 @@ class Server:
             if now - client.last_seen > CLIENT_TIMEOUT:
                 self.drop_client(client, "timed out")
 
+    def log_stats(self, seconds: float) -> None:
+        """One "stats:" line; the admin tool (hrnp_admin.py) reads these."""
+        public = sum(1 for room in self.rooms.values() if room.public)
+        builds: dict[str, int] = {}
+        for client in self.by_token.values():
+            builds[client.build] = builds.get(client.build, 0) + 1
+        versions = ", ".join(f"{b or '?'}={n}" for b, n in sorted(builds.items())) or "-"
+        log.info("stats: %d clients (peak %d), %d rooms (%d public), versions %s, "
+                 "relay %d players %d packets %d KB in %.0f s",
+                 len(self.by_token), self.peak_clients, len(self.rooms), public, versions,
+                 len(self.relay_players), self.relay_packets, self.relay_bytes // 1024, seconds)
+        self.peak_clients = len(self.by_token)
+        self.relay_packets = self.relay_bytes = 0
+        self.relay_players.clear()
+
     def run(self) -> None:
         self.sock.settimeout(1.0)
         last_expire = time.monotonic()
+        last_stats = time.monotonic()
         while True:
             try:
                 data, addr = self.sock.recvfrom(2048)
@@ -338,9 +382,14 @@ class Server:
                     self.handle(data, addr)
                 except (ValueError, struct.error) as err:
                     log.debug("bad packet from %s: %s", addr, err)
-            if time.monotonic() - last_expire > 5.0:
-                last_expire = time.monotonic()
+            now = time.monotonic()
+            if now - last_expire > 5.0:
+                last_expire = now
                 self.expire()
+            if self.stats_wanted or now - last_stats >= STATS_INTERVAL:
+                self.stats_wanted = False
+                self.log_stats(now - last_stats)
+                last_stats = now
 
 
 def main() -> None:
@@ -355,7 +404,11 @@ def main() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((args.bind, args.port))
     log.info("HarmonyRecomp online server on UDP %s:%d", args.bind, args.port)
-    Server(sock).run()
+    server = Server(sock)
+    if hasattr(signal, "SIGUSR1"):
+        # `systemctl kill -s USR1 hrnp`: log a stats line now (used by hrnp_admin.py).
+        signal.signal(signal.SIGUSR1, lambda *_: setattr(server, "stats_wanted", True))
+    server.run()
 
 
 if __name__ == "__main__":
