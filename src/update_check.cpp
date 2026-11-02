@@ -105,6 +105,12 @@ void Check() {
     return;
   }
   const std::string latest = m[1].str();
+  // The release is published before the build attaches its files; until the
+  // setup is there, a player could not update anyway.
+  if (body.find("\"HarmonyRecomp-Setup.exe\"") == std::string::npos) {
+    REXLOG_INFO("Update check: {} has no setup yet (still building)", latest);
+    return;
+  }
   const auto have = ParseVersion(current);
   const auto want = ParseVersion(latest);
   if (want.empty() || have.empty() || !(have < want)) {
