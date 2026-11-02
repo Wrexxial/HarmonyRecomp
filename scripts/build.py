@@ -2066,6 +2066,23 @@ SDK_PATCHES += [
     ),
 ]
 
+# SDK change 26: controls stayed dead after closing the last window (F6 menu)
+# when nothing else was on screen; F2 (FPS counter) brought them back.
+#
+# The game only gets input while no dialog wants it (mouse_dialog_count_),
+# and that count is updated while dialogs are drawn. Closing the last dialog
+# outside drawing (the F6 key) detaches the drawer, so drawing stops and the
+# count stayed at 1 until the next dialog (F2) was opened.
+SDK_PATCHES += [
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  // properties.\n  ClearInput();\n  gamepad_fed_ = false;\n}\n",
+        "  // properties.\n  ClearInput();\n  gamepad_fed_ = false;\n"
+        "  // No dialog is left to take input; Draw() no longer runs to say so.\n"
+        "  mouse_dialog_count_ = 0;\n}\n",
+    ),
+]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
