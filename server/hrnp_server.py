@@ -342,8 +342,11 @@ class Server:
         self.relay_packets += 1
         self.relay_bytes += len(payload)
         self.relay_players.add(client.vip)
+        # client.rooms keeps the codes of rooms that have closed since.
         for code in client.rooms & dst.rooms:
-            self.rooms[code].relayed = True
+            room = self.rooms.get(code)
+            if room:
+                room.relayed = True
 
     def expire(self) -> None:
         now = time.monotonic()
@@ -382,6 +385,9 @@ class Server:
                     self.handle(data, addr)
                 except (ValueError, struct.error) as err:
                     log.debug("bad packet from %s: %s", addr, err)
+                except Exception:
+                    # A bug in one handler must not stop the server for everyone.
+                    log.exception("error handling a packet from %s", addr)
             now = time.monotonic()
             if now - last_expire > 5.0:
                 last_expire = now
