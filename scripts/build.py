@@ -2083,6 +2083,42 @@ SDK_PATCHES += [
     ),
 ]
 
+# SDK change 27: crash after a while in co-op ("Thunk address space exhausted",
+# then "Call to invalid or unregistered function at guest address 0x00000000").
+#
+# The game looks up the code of its shot/enemy modules with
+# XexGetProcedureAddress every time it uses one. Each lookup handed out a new
+# thunk from the 64 KB pool of the calling module and none was ever reused, so
+# after about 16000 lookups the pool was full and the next lookup returned 0.
+# A function now keeps the thunk it got first, as GetProcAddress on the console
+# returns the same address every time. The pool is still released with its
+# module.
+SDK_PATCHES += [
+    (
+        "include/rex/system/function_dispatcher.h",
+        "    uint32_t thunk_limit;\n  };\n",
+        "    uint32_t thunk_limit;\n"
+        "    // Thunks handed out from this pool, one per host function.\n"
+        "    std::unordered_map<::PPCFunc*, uint32_t> thunks;\n  };\n",
+    ),
+    (
+        "src/system/function_dispatcher.cpp",
+        "  if (mod->next_thunk_address >= mod->thunk_limit) {\n",
+        "  // Same function, same thunk: the game asks for the same export again and\n"
+        "  // again, and the pool would run out.\n"
+        "  if (auto cached = mod->thunks.find(func); cached != mod->thunks.end()) {\n"
+        "    return cached->second;\n"
+        "  }\n"
+        "  if (mod->next_thunk_address >= mod->thunk_limit) {\n",
+    ),
+    (
+        "src/system/function_dispatcher.cpp",
+        "    mod->next_thunk_address -= 4;\n    return 0;\n  }\n  return addr;\n",
+        "    mod->next_thunk_address -= 4;\n    return 0;\n  }\n"
+        "  mod->thunks[func] = addr;\n  return addr;\n",
+    ),
+]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
