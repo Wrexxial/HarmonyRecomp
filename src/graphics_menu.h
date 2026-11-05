@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <rex/ui/imgui_dialog.h>
 
@@ -25,6 +27,11 @@ void SetShowFps(bool on);
 // Parse error of harmonyrecomp.toml at startup, empty if it was fine. The SDK
 // ignores an unreadable file completely, so the graphics menu shows this.
 void SetConfigError(std::string message);
+
+// Sets keys in harmonyrecomp.toml without touching the rest of the file (used
+// at exit to remember the window size and fullscreen state).
+void WriteConfigValues(const std::filesystem::path& config_path,
+                       const std::vector<std::pair<std::string, std::string>>& values);
 const std::string& ConfigError();
 
 // Small FPS readout in the top-left corner. Counts guest frames (the game's own

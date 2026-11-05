@@ -4,6 +4,7 @@
 
 #include "saves.h"
 
+#include <fstream>
 #include <iterator>
 #include <string_view>
 #include <utility>
@@ -100,6 +101,38 @@ std::string& ConfigErrorStorage() {
 }  // namespace
 
 void SetConfigError(std::string message) { ConfigErrorStorage() = std::move(message); }
+
+void WriteConfigValues(const std::filesystem::path& config_path,
+                       const std::vector<std::pair<std::string, std::string>>& values) {
+  // harmonyrecomp.toml is flat ("key = value" lines, written by SaveConfig);
+  // replace the keys' lines or append them, and leave everything else as it is.
+  std::vector<std::string> lines;
+  {
+    std::ifstream in(config_path);
+    std::string line;
+    while (std::getline(in, line)) {
+      if (!line.empty() && line.back() == '\r') line.pop_back();
+      lines.push_back(line);
+    }
+  }
+  for (const auto& [key, value] : values) {
+    const std::string entry = key + " = " + value;
+    bool replaced = false;
+    for (auto& line : lines) {
+      const auto eq = line.find('=');
+      if (eq == std::string::npos) continue;
+      std::string name = line.substr(0, eq);
+      while (!name.empty() && name.back() == ' ') name.pop_back();
+      if (name == key) {
+        line = entry;
+        replaced = true;
+      }
+    }
+    if (!replaced) lines.push_back(entry);
+  }
+  std::ofstream out(config_path, std::ios::trunc);
+  for (const auto& line : lines) out << line << "\n";
+}
 const std::string& ConfigError() { return ConfigErrorStorage(); }
 
 //=============================================================================
@@ -293,7 +326,7 @@ void GraphicsMenuDialog::DrawGraphics() {
   ComboSetting("Anti-aliasing", "swap_post_effect", kAntiAlias);
   RestartHint(start_aa_, "swap_post_effect");
   bool fullscreen = GetBool("fullscreen");
-  if (ImGui::Checkbox("Start in fullscreen", &fullscreen)) {
+  if (ImGui::Checkbox("Fullscreen (borderless, F11 switches)", &fullscreen)) {
     SetBool("fullscreen", fullscreen);
   }
   RestartHint(start_fullscreen_, "fullscreen");

@@ -149,6 +149,10 @@ class HarmonyrecompApp : public rex::ReXApp {
                           [this] { ToggleGraphicsMenu(); });
     rex::ui::RegisterBind("bind_fps_counter", "F2", "Toggle FPS counter",
                           [this] { SetFpsCounter(!harmony::ShowFps()); });
+    // Fullscreen is borderless (a window covering the monitor, no mode change).
+    rex::ui::RegisterBind("bind_fullscreen", "F11", "Toggle fullscreen", [this] {
+      if (auto* w = window()) w->SetFullscreen(!w->IsFullscreen());
+    });
     if (harmony::ShowFps()) {
       SetFpsCounter(true);
     }
@@ -158,9 +162,11 @@ class HarmonyrecompApp : public rex::ReXApp {
 
   // Runs before the SDK tears down the ImGui drawer.
   void OnShutdown() override {
+    RememberWindow();
     harmony::netplay::Shutdown();
     rex::ui::UnregisterBind("bind_graphics_menu");
     rex::ui::UnregisterBind("bind_fps_counter");
+    rex::ui::UnregisterBind("bind_fullscreen");
     graphics_menu_.reset();
     fps_counter_.reset();
     harmony::notice::Shutdown();
@@ -168,6 +174,24 @@ class HarmonyrecompApp : public rex::ReXApp {
   }
 
  private:
+  // The next start opens the window as it was left: fullscreen or not, and
+  // the window's size (window_width/window_height, logical pixels).
+  void RememberWindow() {
+    auto* w = window();
+    if (!w || config_path_.empty()) return;
+    std::vector<std::pair<std::string, std::string>> values;
+    values.push_back({"fullscreen", w->IsFullscreen() ? "true" : "false"});
+    if (!w->IsFullscreen()) {
+      const uint32_t width = w->GetActualLogicalWidth();
+      const uint32_t height = w->GetActualLogicalHeight();
+      if (width >= 320 && height >= 180) {
+        values.push_back({"window_width", std::to_string(width)});
+        values.push_back({"window_height", std::to_string(height)});
+      }
+    }
+    harmony::WriteConfigValues(config_path_, values);
+  }
+
   std::filesystem::path ReadGameDataRootFromConfig() const {
     std::error_code ec;
     if (config_path_.empty() || !std::filesystem::exists(config_path_, ec)) {
