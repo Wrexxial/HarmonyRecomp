@@ -57,7 +57,7 @@ find "$OUT" \( -name '*.a' -o -name 'libLLVM*' -o -name 'libgallium*' -o -name '
   -o -name 'lib[aht]san.so*' -o -name 'libubsan.so*' -o -name 'liblsan.so*' \) | while read -r f; do
   case "$(basename "$f")" in
     libc_nonshared.a|libgcc.a|libgcc_eh.a|libssp_nonshared.a|libmvec.a|libstdc++.a|\
-    libstdc++fs.a|libsupc++.a|libatomic.a) ;;
+    libstdc++fs.a|libsupc++.a|libatomic.a|libdl.a|librt.a|libpthread.a|libutil.a|libanl.a) ;;  # -ldl etc.: empty stubs since glibc 2.34
     *) rm -f "$f" ;;
   esac
 done
