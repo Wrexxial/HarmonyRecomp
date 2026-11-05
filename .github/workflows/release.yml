@@ -209,10 +209,115 @@ jobs:
           name: logs-smoke
           path: ${{ runner.temp }}/logs/
 
+  # Linux / Steam Deck: prebuilt SDK, a toolchain with its own sysroot (SteamOS
+  # has no development files) and the install script. Like on Windows, the game
+  # itself is built on the player's machine (scripts/install_linux.sh).
+  build-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ci-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+          mkdir -p "$RUNNER_TEMP/logs"
+
+      - name: Download LLVM, CMake, Ninja
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/LLVM-${LLVM_VERSION}-Linux-X64.tar.xz"
+          tar -xf llvm.tar.xz && rm llvm.tar.xz && mv "LLVM-${LLVM_VERSION}-Linux-X64" llvm
+          curl -fsSL -o cmake.tar.gz "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+          tar -xf cmake.tar.gz && mv "cmake-${CMAKE_VERSION}-linux-x86_64" cmake
+          curl -fsSL -o ninja.zip "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip"
+          mkdir ninja && unzip -q ninja.zip -d ninja
+          echo "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/cmake/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/ninja" >> "$GITHUB_PATH"
+
+      - name: SDK dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-3-dev libx11-xcb-dev libasound2-dev libpulse-dev \
+            libwayland-dev libxkbcommon-dev libudev-dev
+
+      - name: SDK cache key
+        id: sdkkey
+        run: |
+          key=$(python3 -c "import runpy; m = runpy.run_path('scripts/build.py'); print(m['sdk_patch_hash']())")
+          echo "key=sdk-linux-amd64-llvm${LLVM_VERSION}-$(cat sdk-pin.txt | sha256sum | cut -c1-12)-${key}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore prebuilt SDK
+        id: sdkcache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../rexglue-sdk/out/install/linux-amd64
+          key: ${{ steps.sdkkey.outputs.key }}
+
+      - name: Build the ReXGlue SDK
+        if: steps.sdkcache.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          python3 -u scripts/build.py --sdk-only 2>&1 | tee "$RUNNER_TEMP/logs/sdk-build-linux.log"
+
+      - name: Sysroot
+        run: |
+          set -o pipefail
+          scripts/make_sysroot.sh "$RUNNER_TEMP/sysroot" 2>&1 | tee "$RUNNER_TEMP/logs/sysroot.log"
+
+      - name: Package
+        run: |
+          set -o pipefail
+          python3 scripts/package_linux.py --out dist-linux --tag "${{ steps.tag.outputs.tag }}" \
+            --sdk "$(cd .. && pwd)/rexglue-sdk/out/install/linux-amd64" \
+            --llvm "$RUNNER_TEMP/llvm" --cmake "$RUNNER_TEMP/cmake" --ninja "$RUNNER_TEMP/ninja/ninja" \
+            --sysroot "$RUNNER_TEMP/sysroot" 2>&1 | tee "$RUNNER_TEMP/logs/package-linux.log"
+
+      - name: Smoke test like the install script (without a game)
+        run: |
+          set -euo pipefail
+          mkdir -p smoke && cd smoke
+          tar -xzf ../dist-linux/harmonyrecomp-linux-package.tar.gz
+          tar -xJf ../dist-linux/harmonyrecomp-linux-toolchain.tar.xz
+          export PATH="$PWD/toolchain/llvm/bin:$PWD/toolchain/cmake/bin:$PWD/toolchain/ninja:/usr/bin:/bin"
+          clang++ --version | tee "$RUNNER_TEMP/logs/smoke-linux.log"
+          printf '#include <expected>\n#include <gtk/gtk.h>\nint main(){std::expected<int,int> e=1;return gtk_init_check(nullptr,nullptr)&&*e?0:0;}\n' > t.cpp
+          S="$PWD/toolchain/sysroot"
+          INC=""; for d in $(sed -n 's/^includes //p' "$S/gtk3-flags.txt"); do INC="$INC -isystem $S$d"; done
+          LIBS=""; for l in $(sed -n 's/^libs //p' "$S/gtk3-flags.txt"); do LIBS="$LIBS -l$l"; done
+          clang++ --sysroot="$S" -std=c++23 -fuse-ld=lld $INC t.cpp $LIBS -o t 2>&1 | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
+          ./t; echo "sysroot build ok" | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
+          bash -n ../dist-linux/harmonyrecomp-install.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files-linux
+          path: dist-linux/
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ steps.tag.outputs.tag }}" dist-linux/* --clobber
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-build-linux
+          path: ${{ runner.temp }}/logs/
+
   # Publishes the logs of both jobs to the branch "ci-status", so they can be
   # read with plain git (git fetch origin ci-status).
   report:
-    needs: [build, smoke-test]
+    needs: [build, smoke-test, build-linux]
     if: always() && github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
@@ -231,6 +336,7 @@ jobs:
             echo "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "build: ${{ needs.build.result }}"
             echo "smoke-test: ${{ needs.smoke-test.result }}"
+            echo "build-linux: ${{ needs.build-linux.result }}"
           } > RESULT.txt
           cat RESULT.txt
           git add -A
