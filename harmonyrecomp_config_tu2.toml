@@ -114,3 +114,16 @@ registers = ["r10", "r11"]
 address = 0x825C72BC
 name = "HarmonyBackBufferSize"
 registers = ["r10", "r11"]
+
+# src/widescreen.cpp: the UI layers' fixed 16:9 projections in sub_82471B10
+# (after the UI scale vector is loaded, and before the UI perspective aspect
+# factor is used).
+[[midasm_hook]]
+address = 0x82471D8C
+name = "HarmonyUiOrthoScale"
+registers = ["v63"]
+
+[[midasm_hook]]
+address = 0x82471E1C
+name = "HarmonyUiPerspectiveAspect"
+registers = ["f0"]

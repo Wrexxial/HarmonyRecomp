@@ -21,6 +21,10 @@ REXCVAR_DEFINE_STRING(aspect_ratio, "16:9", "Video",
                       "Experimental: the game's picture aspect ratio, e.g. 16:10, 21:9, 32:9 "
                       "(16:9 is the original; needs a restart)");
 
+REXCVAR_DEFINE_BOOL(aspect_ratio_ui_fix, true, "Video",
+                    "With another aspect_ratio: draw HUD and menus in their real shape, centred "
+                    "(false: stretched over the whole width like the game does)");
+
 namespace {
 
 // "21:9" -> 21, 9; false for anything else.
@@ -76,6 +80,10 @@ void FitRatio(int num, int den, uint32_t width, uint32_t height, uint32_t* out_w
   }
 }
 
+// The picture the game renders, once HarmonyBackBufferSize changed it (0: unchanged).
+uint32_t g_width = 0;
+uint32_t g_height = 0;
+
 }  // namespace
 
 // r11 = back buffer width, r10 = height (the values the game is about to store).
@@ -101,7 +109,42 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
               new_height, num, den);
   r11.u64 = new_width;
   r10.u64 = new_height;
+  g_width = new_width;
+  g_height = new_height;
   // The presenter shapes the picture by the video mode (16:9); make it use the
   // picture's own shape, so it is letterboxed instead of squeezed (SDK change 31).
   rex::cvar::SetFlagByName("present_guest_aspect", "true");
+}
+
+// The game's scene layers (sub_82471B10 builds them once at startup; names in
+// a table at 0x828F55C4): the world layers are projected with the real back
+// buffer size, but the UI layers (SRN2D_UI_GAME, _UI_BG, _UI_FG) with a fixed
+// 1920x1080 orthographic projection, scale (1/960, 1/540, ...) from
+// 0x821F9A70, and SRN2D_UI_PERS with a fixed 16:9 aspect (0.5625 at
+// 0x821DF9B4). On a wider picture that stretched the HUD, the menus and the
+// title pictures. The hooks give them the picture's real shape: the UI keeps
+// its 1080 rows and gets a wider (or narrower) span, centred like before.
+
+// Right after "lvx128 v63,r0,r23" (0x82471D88) loaded the UI scale vector.
+void HarmonyUiOrthoScale(PPCVRegister& v63) {
+  if (!g_width || !g_height || !REXCVAR_GET(aspect_ratio_ui_fix)) return;
+  const float half_width = 540.0f * float(g_width) / float(g_height);
+  for (float& value : v63.f32) {
+    if (std::abs(value - 1.0f / 960.0f) < 1e-7f) {
+      value = 1.0f / half_width;
+      REXLOG_INFO("[widescreen] UI layers: {} units wide instead of 1920", 2 * half_width);
+      return;
+    }
+  }
+  REXLOG_WARN("[widescreen] UI scale vector not found: the UI stays stretched");
+}
+
+// Right before "fmuls f0,f13,f0" (0x82471E1C): f0 is the 16:9 aspect factor.
+void HarmonyUiPerspectiveAspect(PPCRegister& f0) {
+  if (!g_width || !g_height || !REXCVAR_GET(aspect_ratio_ui_fix)) return;
+  if (std::abs(f0.f64 - 0.5625) > 1e-6) {
+    REXLOG_WARN("[widescreen] UI perspective: unexpected factor {}", f0.f64);
+    return;
+  }
+  f0.f64 = double(g_height) / double(g_width);
 }
