@@ -67,6 +67,24 @@
 namespace harmony::netplay::gamesock {
 namespace {
 
+// The game binds its VDP socket to port 1000. Linux (also under Wine/Proton,
+// Steam Deck) only lets root bind ports below 1024, so session creation failed
+// there. Real (LAN/VPN) sockets therefore use port + kHostPortOffset on every
+// system, and the game keeps seeing its own port numbers. The virtual network
+// (online server) is not affected: it carries the game's port numbers itself.
+constexpr uint16_t kHostPortOffset = 48000;
+uint16_t HostPort(uint16_t game_port) {
+  return game_port != 0 && game_port < 1024 ? uint16_t(game_port + kHostPortOffset) : game_port;
+}
+uint16_t GamePort(uint16_t host_port) {
+  return host_port >= kHostPortOffset && host_port < kHostPortOffset + 1024
+             ? uint16_t(host_port - kHostPortOffset)
+             : host_port;
+}
+void ToHostPort(sockaddr_in* a) { a->sin_port = htons(HostPort(ntohs(a->sin_port))); }
+void ToGamePort(sockaddr_in* a) { a->sin_port = htons(GamePort(ntohs(a->sin_port))); }
+
+
 using rex::system::XThread;
 
 #if defined(_WIN32)
@@ -360,6 +378,7 @@ RecvResult TryRecv(const RecvOp& op, uint32_t* bytes, uint32_t* error) {
       if (auto* dst = G<uint8_t>(bufs[i].buf)) std::memcpy(dst, scratch.data() + offset, chunk);
       offset += chunk;
     }
+    ToGamePort(&from);
     WriteFrom(op.from_ptr, op.fromlen_ptr, from);
     if (auto* flags = G<rex::be<uint32_t>>(op.flags_ptr)) *flags = 0u;
     *bytes = static_cast<uint32_t>(n);
@@ -553,6 +572,7 @@ u32 WSASendTo(u32 caller, u32 socket, u32 buffers, u32 buffer_count, u32 bytes_s
     CompleteOverlapped(overlapped, 0, n);
     return 0;
   }
+  if (has_to) ToHostPort(&to);
   auto n = has_to ? sendto(N(native), reinterpret_cast<const char*>(data.data()),
                            static_cast<int>(data.size()), 0,
                            reinterpret_cast<const sockaddr*>(&to), sizeof(to))
@@ -641,6 +661,7 @@ u32 RecvFrom(u32 caller, u32 socket, u32 buf_ptr, u32 buf_len, u32 flags, u32 fr
     SetError(LastNativeError());
     return ~0u;
   }
+  ToGamePort(&from);
   WriteFrom(from_ptr, fromlen_ptr, from);
   return static_cast<u32>(n);
 }
@@ -698,24 +719,29 @@ u32 Bind(u32 caller, u32 socket, u32 name_ptr, u32 name_len) {
     SetError(kWsaEFault);
     return ~0u;
   }
+  const uint16_t game_port = ntohs(addr.sin_port);
+  ToHostPort(&addr);
   if (::bind(N(native), reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0) {
     uint32_t e = LastNativeError();
     if (Enabled()) {
-      NETPLAY_LOG("game socket {:08X} could not bind port {} (error {}: port in use?)", socket,
-                  ntohs(addr.sin_port), e);
+      NETPLAY_LOG("game socket {:08X} could not bind port {} (game port {}, error {}: port in use?)",
+                  socket, ntohs(addr.sin_port), game_port, e);
     }
     SetError(e);
     return ~0u;
   }
   // These ports must be allowed through the firewall (next to the lobby port)
   // for other players to reach this PC.
-  if (Enabled()) NETPLAY_LOG("game socket {:08X} bound to port {}", socket, ntohs(addr.sin_port));
+  if (Enabled()) {
+    NETPLAY_LOG("game socket {:08X} bound to port {} (game port {})", socket, ntohs(addr.sin_port),
+                game_port);
+  }
   if (online::Connected()) {
     sockaddr_in bound{};
     socklen_type bound_len = sizeof(bound);
-    uint16_t port = ntohs(addr.sin_port);
+    uint16_t port = game_port;
     if (getsockname(N(native), reinterpret_cast<sockaddr*>(&bound), &bound_len) == 0) {
-      port = ntohs(bound.sin_port);
+      port = GamePort(ntohs(bound.sin_port));
     }
     ListenVirtual(socket, port);
   }

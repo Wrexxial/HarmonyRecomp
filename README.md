@@ -132,7 +132,7 @@ On the Xbox 360 the game's co-op (up to six players) only works over Xbox Live. 
 
 - **Sign-in:** the game sees a player signed in to Live with their own gamertag and online XUID. The offline profile, and with it your save data, stays unchanged.
 - **Sessions and matchmaking:** create, search, join, details, host migration. Instead of a server, the search asks all PCs in the network (broadcast) plus the addresses in `netplay_peers`. Every player runs a small lobby service on UDP port `47658`.
-- **XNet and QoS:** players are identified by their IPv4 address. The game's own traffic is plain UDP on port `1000` directly between the PCs.
+- **XNet and QoS:** players are identified by their IPv4 address. The game's own traffic is plain UDP directly between the PCs; the game uses port `1000`, which HarmonyRecomp maps to UDP `49000` on the PC (Linux and Proton do not allow ports below 1024 without root).
 
 ### Playing over the internet without a VPN
 
@@ -152,7 +152,7 @@ Switch on online co-op in F6 > Online, Save and restart. The game connects to th
    # netplay_peers = "100.x.y.z" # only needed if the search finds nothing
    ```
 
-4. **Firewall:** on the first start Windows asks for network access. Allow `harmonyrecomp.exe` on **private and public** networks; VPN adapters are often classified as public. The ports are UDP `47658` (lobby) and UDP `1000` (game).
+4. **Firewall:** on the first start Windows asks for network access. Allow `harmonyrecomp.exe` on **private and public** networks; VPN adapters are often classified as public. The ports are UDP `47658` (lobby) and UDP `49000` (game; `1000` before v0.6.0).
 5. One player creates a room in the online menu, the others search and join.
 
 The log shows every step with `[netplay]`: the chosen address, lobbies found, QoS results, opened ports.
