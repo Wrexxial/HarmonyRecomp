@@ -24,8 +24,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # LLVM programs the build uses (CMake probes ar/ranlib/rc/mt on Windows too).
-LLVM_PROGRAMS = ("clang", "clang++", "clang-cl", "lld-link", "llvm-rc", "llvm-ar", "llvm-lib",
+# Not clang-cl: the presets use clang/clang++, and on Windows each of them is
+# a full copy of the compiler (over 100 MB).
+LLVM_PROGRAMS = ("clang", "clang++", "lld-link", "llvm-rc", "llvm-ar", "llvm-lib",
                  "llvm-ranlib", "llvm-mt", "llvm-nm", "llvm-objcopy")
+# Clang runtime libraries the game build never links (sanitizers, profiling,
+# fuzzing, ...): left out of the toolchain download.
+CLANG_RT_UNUSED = ("asan", "ubsan", "tsan", "msan", "lsan", "hwasan", "memprof", "dfsan",
+                   "fuzzer", "profile", "xray", "scudo", "orc", "stats", "cfi", "safestack",
+                   "gwp_asan", "nsan", "rtsan", "ctx_profile")
+# CMake parts the build does not need.
+CMAKE_UNUSED_DIRS = ("doc", "man")
+CMAKE_UNUSED_FILES = ("cmake-gui.exe", "cmake-gui")
 LLVM_LICENSES = ("LICENSE.TXT",)
 # Every entry gets this fixed date. Zip entries store local time without a
 # time zone, so the build machine's time (UTC) came out hours in the future
@@ -51,10 +61,10 @@ def add_file(archive: zipfile.ZipFile, path: Path, name: str) -> None:
     archive.writestr(info, path.read_bytes(), compresslevel=6)
 
 
-def add_tree(archive: zipfile.ZipFile, src: Path, prefix: str) -> int:
+def add_tree(archive: zipfile.ZipFile, src: Path, prefix: str, skip=None) -> int:
     count = 0
     for path in sorted(src.rglob("*")):
-        if path.is_file():
+        if path.is_file() and not (skip and skip(path.relative_to(src))):
             add_file(archive, path, f"{prefix}/{path.relative_to(src).as_posix()}")
             count += 1
     return count
@@ -115,12 +125,16 @@ def make_toolchain(out: Path, llvm: Path, cmake: Path, ninja: Path, windows: boo
         print(f"  llvm: {', '.join(found)}")
         # Clang's builtin headers (intrinsics) and runtime libraries.
         clang_lib = llvm / "lib" / "clang"
-        n = add_tree(archive, clang_lib, "llvm/lib/clang")
+        n = add_tree(archive, clang_lib, "llvm/lib/clang",
+                     skip=lambda rel: "include" not in rel.parts and
+                     any(part in rel.name.lower() for part in CLANG_RT_UNUSED))
         print(f"  llvm/lib/clang: {n} files")
         for name in LLVM_LICENSES:
             if (llvm / name).is_file():
                 add_file(archive, llvm / name, f"llvm/{name}")
-        n = add_tree(archive, cmake, "cmake")
+        n = add_tree(archive, cmake, "cmake",
+                     skip=lambda rel: (len(rel.parts) > 1 and rel.parts[0] in CMAKE_UNUSED_DIRS) or
+                     rel.name in CMAKE_UNUSED_FILES)
         print(f"  cmake: {n} files")
         add_file(archive, ninja, f"ninja/{ninja.name}")
     print(f"wrote {out} ({out.stat().st_size >> 20} MB)")

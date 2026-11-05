@@ -25,7 +25,7 @@ namespace HarmonyRecompSetup
         readonly TextBox dirBox = new TextBox();
         readonly CheckBox desktopBox = new CheckBox { Text = "Create a desktop shortcut", Checked = true, AutoSize = true };
         readonly CheckBox startMenuBox = new CheckBox { Text = "Create a Start menu entry", Checked = true, AutoSize = true };
-        readonly CheckBox keepBox = new CheckBox { Text = "Keep the build tools (faster updates, needs several GB)", AutoSize = true };
+        readonly CheckBox keepBox = new CheckBox { Text = "Keep all build files (several GB; only needed for development)", AutoSize = true };
         readonly Button installButton = new Button { Text = "Install", AutoSize = true };
 
         // Progress page
@@ -364,9 +364,10 @@ namespace HarmonyRecompSetup
                 lock (installer.Warnings)
                     foreach (string w in installer.Warnings) notes += "Note: " + w + "\r\n\r\n";
                 doneText.Text = notes + "Castlevania: Harmony of Despair is installed in\r\n" + dirBox.Text + "\r\n\r\n" +
-                                "Start it with \"Play\" or the shortcut. F6 opens the settings (graphics, controls, online), F2 shows the FPS. " +
-                                "For online co-op see the HarmonyRecomp page on GitHub.\r\n\r\n" +
-                                "To update later, run the newest setup again: your settings and saves are kept.";
+                                "Start it with \"Play\" or the shortcut. F6 opens the settings (graphics, controls, online, saves), " +
+                                "F2 shows the FPS, F11 switches fullscreen. For online co-op see the HarmonyRecomp page on GitHub.\r\n\r\n" +
+                                "To update later, run the newest setup again: your settings and saves are kept. " +
+                                "To add DLC, put it into the DLC folder and run this setup again: it only rebuilds, nothing is downloaded again.";
             }
             else if (error is SetupCancelled)
             {

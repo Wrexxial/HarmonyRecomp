@@ -245,8 +245,16 @@ namespace HarmonyRecompSetup
                     CreateShortcut(Environment.GetFolderPath(Environment.SpecialFolder.Programs));
                 if (!options.KeepBuildFiles)
                 {
+                    // The downloads (and the Microsoft C++ components) stay: running
+                    // the setup again, e.g. after adding DLC, then only rebuilds and
+                    // downloads nothing. A newer release replaces them.
                     Report(0.99, "Removing the build files");
-                    TryDelete(SetupDir);
+                    foreach (string dir in Directory.GetDirectories(SetupDir))
+                    {
+                        string name = Path.GetFileName(dir);
+                        if (name != "downloads" && name != "msvc") TryDelete(dir);
+                    }
+                    foreach (string file in Directory.GetFiles(SetupDir)) TryDeleteFile(file);
                 }
                 Report(1.0, "Done");
                 Log("Setup finished: " + ExePath);
@@ -533,6 +541,11 @@ namespace HarmonyRecompSetup
             {
                 Log("Could not create a shortcut in " + folder + ": " + e.Message);
             }
+        }
+
+        static void TryDeleteFile(string file)
+        {
+            try { File.Delete(file); } catch { }
         }
 
         static void TryDelete(string dir)
