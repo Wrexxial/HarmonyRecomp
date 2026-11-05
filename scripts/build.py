@@ -2480,7 +2480,7 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
     return out_dir
 
 
-RUNTIME_FILES = ("*.exe", "*.dll", "*.map")
+RUNTIME_FILES = ("*.exe", "*.dll", "*.map", "harmonyrecomp", "*.so")
 
 
 # Microsoft's C++ runtime, shipped in the prebuilt SDK's bin/ (package_release.py).
@@ -2505,7 +2505,7 @@ def install_copy(src: Path, dst: Path) -> None:
 
 
 def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
-                 runtime_dir: Path | None = None) -> None:
+                 runtime_dir: Path | None = None, sdk_prefix: Path | None = None) -> None:
     """Put the playable game into target: executable, modules, settings, the
     extracted game data and the DLC packages (installed at first start)."""
     print(f"[6/6] Installing into {target}")
@@ -2513,7 +2513,13 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
     target.mkdir(parents=True, exist_ok=True)
     for pattern in RUNTIME_FILES:
         for src in out_dir.glob(pattern):
-            install_copy(src, target / src.name)
+            if src.is_file():
+                install_copy(src, target / src.name)
+    if platform.system() == "Linux" and sdk_prefix:
+        # The executable looks for the SDK's shared libraries next to itself
+        # (RUNPATH $ORIGIN); on Windows CMake puts the DLLs into out_dir.
+        for lib in sorted((sdk_prefix / "lib").glob("*.so*")):
+            install_copy(lib, target / lib.name)
     if runtime_dir:
         # Built with the portable Microsoft components: the PC may have no (or
         # an old) Visual C++ Redistributable, so the runtime goes next to the exe.
@@ -2538,7 +2544,8 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
         (target / "dlc").mkdir(exist_ok=True)
         for package in packages:
             install_copy(package, target / "dlc" / package.name)
-    print(f"      done: start {target / 'harmonyrecomp.exe'}")
+    exe = "harmonyrecomp.exe" if platform.system() == "Windows" else "harmonyrecomp"
+    print(f"      done: start {target / exe}")
 
 
 def main() -> int:
@@ -2589,7 +2596,7 @@ def main() -> int:
     out_dir = step_build_game(pid, config, prefix, args.jobs)
     if args.install_to:
         runtime_dir = tool.parent if args.app_local_runtime else None
-        step_install(out_dir, args.install_to.resolve(), args.dlc_dir, runtime_dir)
+        step_install(out_dir, args.install_to.resolve(), args.dlc_dir, runtime_dir, prefix)
     progress("done")
     return 0
 
