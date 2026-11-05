@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include "netplay/online.h"
+
 #include <rex/ui/imgui_dialog.h>
 
 #include "settings_tabs.h"
@@ -52,6 +54,7 @@ class FpsCounterDialog final : public rex::ui::ImGuiDialog {
   uint32_t last_count_ = 0;
   bool have_sample_ = false;
   double fps_ = 0.0;
+  std::vector<netplay::online::PeerInfo> peers_;  // refreshed with the FPS
 };
 
 // Settings window (F6) with Graphics, Controls, Online and Saves tabs. Changes apply to

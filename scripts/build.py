@@ -2153,6 +2153,59 @@ SDK_PATCHES += [
     ),
 ]
 
+# SDK change 29: controller dead after alt-tab (keyboard too) until the F6
+# menu was closed and the FPS counter switched off and on.
+#
+# The game only gets input while no window wants it, and that count was only
+# updated while windows are drawn. A window closed outside drawing kept
+# counting until the next frame drew windows - change 26 fixed this for the
+# last window, this does it for every one. Also logged now: when input to the
+# game switches off and on, and focus changes, to see the cause in a log.
+SDK_PATCHES += [
+    (
+        "src/ui/imgui_drawer.cpp",
+        "  REXLOG_INFO(\"ImGui dialog closed ({} open)\", dialogs_.size());\n"
+        "  DetachIfLastDialogRemoved();\n}\n",
+        "  REXLOG_INFO(\"ImGui dialog closed ({} open)\", dialogs_.size());\n"
+        "  DetachIfLastDialogRemoved();\n"
+        "  // The remaining windows decide whether the game gets input; drawing\n"
+        "  // updates this too, but may not happen soon (or at all) after a window\n"
+        "  // is closed outside drawing, e.g. with its key.\n"
+        "  if (!IsDrawingDialogs()) {\n"
+        "    int mouse_dialogs = 0;\n"
+        "    for (auto* other : dialogs_) {\n"
+        "      mouse_dialogs += other->WantsMouse() ? 1 : 0;\n"
+        "    }\n"
+        "    mouse_dialog_count_ = mouse_dialogs;\n"
+        "  }\n}\n",
+    ),
+    (
+        "src/input/sdl/sdl_input_driver.cpp",
+        "  if ((is_active != controller->is_active) || (is_active && controller->state_changed)) {\n",
+        "  if (is_active != controller->is_active) {\n"
+        "    REXLOG_INFO(\"SDL: controller input to the game {} (user {})\",\n"
+        "                is_active ? \"on\" : \"off: a window takes the input\", user_index);\n"
+        "  }\n"
+        "  if ((is_active != controller->is_active) || (is_active && controller->state_changed)) {\n",
+    ),
+    (
+        "src/input/mnk/mnk_input_driver.cpp",
+        "void MnkInputDriver::OnGotFocus(rex::ui::UISetupEvent&) {\n"
+        "  std::lock_guard lock(state_mutex_);\n  has_focus_ = true;\n",
+        "void MnkInputDriver::OnGotFocus(rex::ui::UISetupEvent&) {\n"
+        "  REXLOG_INFO(\"window got the focus\");\n"
+        "  std::lock_guard lock(state_mutex_);\n  has_focus_ = true;\n",
+    ),
+    (
+        "src/input/mnk/mnk_input_driver.cpp",
+        "void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {\n"
+        "  std::lock_guard lock(state_mutex_);\n  has_focus_ = false;\n",
+        "void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {\n"
+        "  REXLOG_INFO(\"window lost the focus\");\n"
+        "  std::lock_guard lock(state_mutex_);\n  has_focus_ = false;\n",
+    ),
+]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()

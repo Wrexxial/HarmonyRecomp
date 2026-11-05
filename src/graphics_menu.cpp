@@ -2,6 +2,7 @@
 
 #include "graphics_menu.h"
 
+#include "netplay/online.h"
 #include "saves.h"
 
 #include <fstream>
@@ -157,9 +158,14 @@ void FpsCounterDialog::OnDraw(ImGuiIO& io) {
       last_count_ = count;
       have_sample_ = true;
       last_poll_ = now;
+      peers_ = netplay::online::Peers();
     }
   } else {
     fps_ = io.Framerate;
+    if (elapsed >= 0.25) {
+      last_poll_ = now;
+      peers_ = netplay::online::Peers();
+    }
   }
 
   ImGui::SetNextWindowPos(ImVec2(8.0f, 8.0f), ImGuiCond_Always);
@@ -171,6 +177,18 @@ void FpsCounterDialog::OnDraw(ImGuiIO& io) {
   if (ImGui::Begin("##harmony_fps", nullptr, kFlags)) {
     ImGui::Text("%.0f FPS", fps_);
     ImGui::TextDisabled("%.1f ms", fps_ > 0.0 ? 1000.0 / fps_ : 0.0);
+    // Online: the round trip to each player (F6 > Online has the details).
+    for (const auto& peer : peers_) {
+      if (!peer.reachable) {
+        ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.35f, 1.0f), "%s: -", peer.name.c_str());
+      } else if (peer.ping_ms >= 0) {
+        const ImVec4 colour = peer.ping_ms < 80    ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f)
+                              : peer.ping_ms < 160 ? ImVec4(0.95f, 0.85f, 0.3f, 1.0f)
+                                                   : ImVec4(0.95f, 0.4f, 0.35f, 1.0f);
+        ImGui::TextColored(colour, "%s: %d ms%s", peer.name.c_str(), peer.ping_ms,
+                           peer.direct ? "" : " (relay)");
+      }
+    }
   }
   ImGui::End();
 }
