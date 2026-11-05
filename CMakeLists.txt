@@ -17,6 +17,7 @@ set(HARMONYRECOMP_SOURCES
     src/notice.cpp
     src/update_check.cpp
     src/saves.cpp
+    src/widescreen.cpp
     src/controller_remap.cpp
     src/controls_menu.cpp
     src/online_menu.cpp

@@ -101,3 +101,16 @@ labels = [
   0x8279B510, 0x8279B4E0, 0x8279B510, 0x8279B510, # 8-11  types 9-12
   0x8279B4E0, 0x8279B4E0, 0x8279B4E0, 0x8279B4E0, # 12-15 types 13-16
 ]
+
+# Experimental aspect ratios (src/widescreen.cpp, cvar aspect_ratio): replace
+# the back buffer size right before sub_825C7210 stores it (720p branch at
+# 0x825C729C, 1080p branch at 0x825C72BC; r11 = width, r10 = height).
+[[midasm_hook]]
+address = 0x825C729C
+name = "HarmonyBackBufferSize"
+registers = ["r10", "r11"]
+
+[[midasm_hook]]
+address = 0x825C72BC
+name = "HarmonyBackBufferSize"
+registers = ["r10", "r11"]

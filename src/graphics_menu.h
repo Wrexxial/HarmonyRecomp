@@ -81,6 +81,7 @@ class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
   std::string start_aa_;
   std::string start_fullscreen_;
   std::string start_language_;
+  std::string start_aspect_;
   ControlsTab controls_;
   OnlineTab online_;
 };

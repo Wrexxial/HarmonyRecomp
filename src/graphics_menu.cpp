@@ -72,6 +72,10 @@ constexpr Choice kAniso[] = {
     {"4x", "3"},                 {"8x", "4"},  {"16x", "5"},
 };
 // resolution_scale multiplies the guest's 1280x720 render targets.
+// aspect_ratio (src/widescreen.cpp): the game's back buffer shape.
+constexpr Choice kAspect[] = {
+    {"16:9 (original)", "16:9"}, {"16:10", "16:10"}, {"21:9", "21:9"}, {"32:9", "32:9"},
+};
 constexpr Choice kScale[] = {
     {"1x (1280x720)", "1"},
     {"2x (2560x1440)", "2"},
@@ -205,7 +209,8 @@ GraphicsMenuDialog::GraphicsMenuDialog(rex::ui::ImGuiDrawer* drawer,
       start_scale_(Get("resolution_scale")),
       start_aa_(Get("swap_post_effect")),
       start_fullscreen_(Get("fullscreen")),
-      start_language_(Get("user_language")) {}
+      start_language_(Get("user_language")),
+      start_aspect_(Get("aspect_ratio")) {}
 
 void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
@@ -354,6 +359,8 @@ void GraphicsMenuDialog::DrawGraphics() {
                       "system language.");
   }
   RestartHint(start_language_, "user_language");
+  ComboSetting("Aspect ratio (experimental)", "aspect_ratio", kAspect);
+  RestartHint(start_aspect_, "aspect_ratio");
 }
 
 }  // namespace harmony
