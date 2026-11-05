@@ -34,7 +34,12 @@ bool ParseRatio(const std::string& text, int* num, int* den) {
   return true;
 }
 
-uint32_t RoundTo8(double value) { return static_cast<uint32_t>((value + 4.0) / 8.0) * 8; }
+// Sizes in whole EDRAM tiles (80x16 pixels at 32 bits per pixel, a width of
+// two tiles keeps texture rows 32-pixel aligned too): 2520 wide (31.5 tiles)
+// showed the bottom rows wrapped to the top.
+uint32_t RoundTo(double value, uint32_t step) {
+  return static_cast<uint32_t>((value + step / 2.0) / step) * step;
+}
 
 }  // namespace
 
@@ -47,9 +52,9 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
   uint32_t new_width = width;
   uint32_t new_height = height;
   if (num * 9 > den * 16) {
-    new_width = RoundTo8(double(height) * num / den);  // wider: keep the height
+    new_width = RoundTo(double(height) * num / den, 160);  // wider: keep the height
   } else {
-    new_height = RoundTo8(double(width) * den / num);  // taller: keep the width
+    new_height = RoundTo(double(width) * den / num, 16);  // taller: keep the width
   }
   REXLOG_INFO("[widescreen] back buffer {}x{} -> {}x{} ({}:{})", width, height, new_width,
               new_height, num, den);
