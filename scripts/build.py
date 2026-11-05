@@ -2481,7 +2481,9 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
             shutil.rmtree(target_assets)
         shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
     install_copy(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
-    built = set((out_dir / DLC_LIST_NAME).read_text().split())
+    # One package file name per line; renamed packages can contain spaces.
+    built = {line.strip() for line in (out_dir / DLC_LIST_NAME).read_text().splitlines()
+             if line.strip()}
     packages = [p for p in find_packages(dlc_dir or DLC_DIR) if p.name in built]
     if packages:
         (target / "dlc").mkdir(exist_ok=True)
