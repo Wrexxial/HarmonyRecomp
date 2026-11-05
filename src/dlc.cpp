@@ -22,7 +22,6 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <sstream>
 #include <set>
 #include <string>
 #include <system_error>
@@ -92,11 +91,14 @@ std::map<std::string, std::string> BuiltList(bool* found) {
   *found = file.is_open();
   std::string line;
   while (std::getline(file, line)) {
-    std::istringstream words(line);
-    std::string name, id;
-    if (!(words >> name)) continue;
-    if (!(words >> id)) id = name;
-    packages[name] = id;
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+    if (line.empty()) continue;
+    // "<package file>\t<id>"; the file name may contain spaces (renamed
+    // packages), older builds wrote the name alone.
+    const auto tab = line.find('\t');
+    std::string name = line.substr(0, tab);
+    std::string id = tab == std::string::npos ? name : line.substr(tab + 1);
+    packages[name] = id.empty() ? name : id;
   }
   return packages;
 }

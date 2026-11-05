@@ -309,8 +309,9 @@ def dlc_id(name: str) -> str:
 
 
 def dlc_list_names(text: str) -> set[str]:
-    """Package file names from dlc_packages.txt (first word of each line)."""
-    return {line.split()[0] for line in text.splitlines() if line.strip()}
+    """Package file names from dlc_packages.txt: "<name>\t<id>" lines (older
+    builds: the name alone). Names can contain spaces (renamed packages)."""
+    return {line.split("\t")[0].rstrip() for line in text.splitlines() if line.strip()}
 
 
 def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
@@ -422,7 +423,8 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
     # "<package file> <id>": the id is the game's own package number
     # (000info/packageNN.dat), the same for the English and the Japanese
     # package of a DLC, so online play compares DLC by it, not by file name.
-    DLC_LIST.write_text("".join(f"{name} {dlc_id(name)}\n" for name in included))
+    # Tab-separated: renamed package files may contain spaces.
+    DLC_LIST.write_text("".join(f"{name}\t{dlc_id(name)}\n" for name in included))
     if not included:
         print("      no DLC packages in dlc/")
     if not modules and not update:
