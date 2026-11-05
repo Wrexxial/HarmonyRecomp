@@ -2133,6 +2133,24 @@ SDK_PATCHES += [
     ),
 ]
 
+# SDK change 28: GTK flags can be passed in (Linux sysroot toolchain).
+#
+# SteamOS has no development files and often no pkg-config, so the Linux
+# toolchain download brings a sysroot and the GTK flags precomputed
+# (scripts/make_sysroot.sh). build.py passes them as GTK3_* cache variables;
+# pkg-config is only asked when they are not given.
+SDK_PATCHES += [
+    (
+        "cmake/rexglue_helpers.cmake",
+        "        find_package(PkgConfig REQUIRED)\n"
+        "        pkg_check_modules(GTK3 REQUIRED gtk+-3.0)\n",
+        "        if(NOT GTK3_FOUND)\n"
+        "            find_package(PkgConfig REQUIRED)\n"
+        "            pkg_check_modules(GTK3 REQUIRED gtk+-3.0)\n"
+        "        endif()\n",
+    ),
+]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
@@ -2403,6 +2421,24 @@ def fix_future_mtimes(*folders: Path) -> None:
         print(f"      reset {fixed} file time(s) that were in the future")
 
 
+def sysroot_args() -> list[str]:
+    """CMake arguments for the Linux toolchain download's sysroot (SteamOS has no
+    headers): set by scripts/install_linux.sh through HARMONYRECOMP_SYSROOT."""
+    root = os.environ.get("HARMONYRECOMP_SYSROOT")
+    if not root or platform.system() != "Linux":
+        return []
+    sysroot = Path(root)
+    flags = {}
+    for line in (sysroot / "gtk3-flags.txt").read_text().splitlines():
+        key, _, value = line.partition(" ")
+        flags[key] = value.split()
+    includes = ";".join(str(sysroot) + d for d in flags.get("includes", []))
+    print(f"      using the sysroot {sysroot}")
+    return [f"-DCMAKE_SYSROOT={sysroot}", "-DGTK3_FOUND=ON",
+            f"-DGTK3_INCLUDE_DIRS={includes}",
+            f"-DGTK3_LIBRARIES={';'.join(flags.get('libs', []))}"]
+
+
 def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Path:
     preset = f"{pid}-{config.lower()}"
     print(f"[5/5] Building the game ({preset})")
@@ -2416,6 +2452,7 @@ def step_build_game(pid: str, config: str, prefix: Path, jobs: int | None) -> Pa
         version = "dev"
     configure = ["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={prefix}",
                  f"-DCMAKE_BUILD_TYPE={config}", f"-DHARMONYRECOMP_VERSION={version}"]
+    configure += sysroot_args()
     run(configure, cwd=ROOT)
     # When the compiler found on PATH changes (e.g. another LLVM installed or
     # PATH reordered), CMake throws the cache away and configures again without
