@@ -2257,8 +2257,9 @@ for _backend in ("d3d12", "vulkan"):
         ),
         (
             f"src/graphics/{_backend}/command_processor.cpp",
-            "namespace rex::graphics::",
-            "REXCVAR_DECLARE(bool, present_guest_aspect);\n\nnamespace rex::graphics::",
+            f"namespace rex::graphics::{_backend} {{\n",
+            "REXCVAR_DECLARE(bool, present_guest_aspect);\n\n"
+            f"namespace rex::graphics::{_backend} {{\n",
         ),
     ]
 
