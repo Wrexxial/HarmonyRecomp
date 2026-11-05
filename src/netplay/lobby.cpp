@@ -2,6 +2,8 @@
 
 #include "lobby.h"
 
+#include "../dlc.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -601,14 +603,19 @@ std::vector<Found> Search(int timeout_ms, std::optional<uint64_t> session_id) {
     Notice("Lobby of " + who + " hidden: " + m.reason + ". Everyone needs the same version.");
   }
   // Same version but different DLC: playable, the host's stage may be missing.
+  // DLC are compared by the game's package number, so the same DLC in another
+  // language (Japanese packages) or under another file name counts as equal.
   for (const auto& f : playable) {
-    size_t missing = 0;
+    std::string missing;
+    size_t count = 0;
     for (const auto& d : f.dlc) {
-      if (std::find(s.config.dlc.begin(), s.config.dlc.end(), d) == s.config.dlc.end()) ++missing;
+      if (std::find(s.config.dlc.begin(), s.config.dlc.end(), d) != s.config.dlc.end()) continue;
+      if (count++ < 4) missing += (missing.empty() ? "" : ", ") + harmony::DlcName(d);
     }
-    if (missing) {
-      Notice(f.ad.host_name + " has " + std::to_string(missing) +
-             " DLC package(s) you don't have; their DLC stages and characters may not work.");
+    if (count > 4) missing += " and " + std::to_string(count - 4) + " more";
+    if (count) {
+      Notice(f.ad.host_name + " has DLC you don't have (" + missing +
+             "); stages and characters from it may not work.");
     }
   }
   return playable;

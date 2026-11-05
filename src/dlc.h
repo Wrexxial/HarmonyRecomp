@@ -16,7 +16,12 @@ namespace harmony {
 // decides the content folder), before the game's main thread runs.
 void InstallDlcPackages(rex::Runtime* runtime);
 
-// DLC packages this build was made with (dlc_packages.txt next to the exe).
+// DLC this build was made with (dlc_packages.txt next to the exe), as the
+// game's package numbers ("package15"): the same for the English and the
+// Japanese package of a DLC. Older builds: the package file names.
 std::vector<std::string> BuiltDlcPackages();
+
+// Readable name of a DLC id from BuiltDlcPackages() ("Simon (8-bit)").
+std::string DlcName(const std::string& id);
 
 }  // namespace harmony

@@ -116,9 +116,16 @@ struct Peer {
   Clock::time_point punch_until{};
   Clock::time_point next_punch{};
   Clock::time_point last_heard{};
+  Clock::time_point last_data{};    // last game packet
+  Clock::time_point stalled_at{};   // game packets stopped (logged once)
   Clock::time_point next_keepalive{};
   uint64_t nonce = 0;
 };
+
+// Game packets normally flow many times a second while a session runs; a gap
+// this long is logged with the player and the path, so a dropped session can
+// be traced to the player whose packets stopped first.
+constexpr auto kStallLog = std::chrono::seconds(2);
 
 struct State {
   std::mutex mutex;
@@ -234,7 +241,17 @@ void Deliver(uint32_t src_vip, Reader& r) {
     if (it == S().handlers.end()) return;
     handler = it->second;
     auto peer = S().peers.find(src_vip);
-    if (peer != S().peers.end()) peer->second.last_heard = Clock::now();
+    if (peer != S().peers.end()) {
+      Peer& pr = peer->second;
+      const auto now = Clock::now();
+      if (pr.stalled_at != Clock::time_point{}) {
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - pr.last_data).count();
+        Log("online: game data from " + pr.name + " again after " + std::to_string(ms) + " ms");
+        pr.stalled_at = {};
+      }
+      pr.last_heard = pr.last_data = now;
+    }
   }
   handler(src_vip, src_port, p, n);
 }
@@ -404,6 +421,15 @@ void Tick() {
   }
   for (auto it = s.peers.begin(); it != s.peers.end();) {
     Peer& peer = it->second;
+    if (peer.last_data != Clock::time_point{} && peer.stalled_at == Clock::time_point{} &&
+        now - peer.last_data > kStallLog && now - peer.last_data < kStallLog * 2) {
+      peer.stalled_at = now;
+      const auto heard =
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - peer.last_heard).count();
+      Log("online: no game data from " + peer.name + " for 2 s (" +
+          (peer.direct ? "direct" : "relay") + ", last packet of any kind " +
+          std::to_string(heard) + " ms ago)");
+    }
     if (now - peer.last_heard > kPeerTimeout && now > peer.punch_until) {
       Log("online: lost " + peer.name + " (" + Ip(peer.vip) + ")");
       it = s.peers.erase(it);

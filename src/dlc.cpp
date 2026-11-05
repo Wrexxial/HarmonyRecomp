@@ -21,6 +21,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <sstream>
 #include <set>
 #include <string>
 #include <system_error>
@@ -82,15 +84,26 @@ std::vector<std::filesystem::path> DlcFolders(const std::filesystem::path& game_
 
 // Packages the build recompiled. Empty if the list is missing (a build from
 // before the list existed): then nothing is installed.
-std::set<std::string> BuiltPackages(bool* found) {
-  std::set<std::string> names;
+// dlc_packages.txt: one "<package file> <id>" line per package (older builds
+// wrote the file name only); returns file name -> id.
+std::map<std::string, std::string> BuiltList(bool* found) {
+  std::map<std::string, std::string> packages;
   std::ifstream file(rex::filesystem::GetExecutableFolder() / "dlc_packages.txt");
   *found = file.is_open();
   std::string line;
   while (std::getline(file, line)) {
-    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-    if (!line.empty()) names.insert(line);
+    std::istringstream words(line);
+    std::string name, id;
+    if (!(words >> name)) continue;
+    if (!(words >> id)) id = name;
+    packages[name] = id;
   }
+  return packages;
+}
+
+std::set<std::string> BuiltPackages(bool* found) {
+  std::set<std::string> names;
+  for (const auto& [name, id] : BuiltList(found)) names.insert(name);
   return names;
 }
 
@@ -168,8 +181,25 @@ void InstallDlcPackages(rex::Runtime* runtime) {
 
 std::vector<std::string> BuiltDlcPackages() {
   bool found = false;
-  const auto names = BuiltPackages(&found);
-  return {names.begin(), names.end()};
+  std::set<std::string> ids;
+  for (const auto& [name, id] : BuiltList(&found)) ids.insert(id);
+  return {ids.begin(), ids.end()};
+}
+
+std::string DlcName(const std::string& id) {
+  // The game's package numbers (000info/packageNN.dat of each DLC).
+  static const std::map<std::string, std::string> kNames = {
+      {"package01", "Pyramid stage"},        {"package02", "Legion stage"},
+      {"package04", "Origins stage"},        {"package07", "Getsu Fuma stage"},
+      {"package11", "Julius"},               {"package12", "Maria"},
+      {"package13", "Richter"},              {"package14", "Yoko"},
+      {"package15", "Simon (8-bit)"},        {"package16", "Getsu Fuma (8-bit)"},
+      {"package28", "BGM pack 1"},           {"package29", "Music pack 2"},
+  };
+  auto it = kNames.find(id);
+  if (it != kNames.end()) return it->second;
+  if (id.rfind("package", 0) == 0) return "DLC " + id.substr(7);  // e.g. Lord of Flies
+  return id.size() > 12 ? id.substr(0, 8) + "..." : id;  // file name of an older build
 }
 
 }  // namespace harmony

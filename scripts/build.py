@@ -302,6 +302,17 @@ def write_skipped(names: set[str]) -> None:
     DLC_SKIPPED.write_text(f"#sdk {sdk_patch_hash()}\n" + "".join(n + "\n" for n in sorted(names)))
 
 
+def dlc_id(name: str) -> str:
+    """The game's package number of an extracted DLC package ("package15")."""
+    info = sorted((DLC_ASSETS / name / "000info").glob("package*.dat"))
+    return info[0].stem.lower() if info else name
+
+
+def dlc_list_names(text: str) -> set[str]:
+    """Package file names from dlc_packages.txt (first word of each line)."""
+    return {line.split()[0] for line in text.splitlines() if line.strip()}
+
+
 def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
     """Unpack DLC packages from dlc/ and add their modules to codegen.
 
@@ -408,7 +419,10 @@ def step_dlc(dlc_dir: Path | None = None, game: Path | None = None) -> None:
         included, modules = [], []
 
     DLC_LIST.parent.mkdir(parents=True, exist_ok=True)
-    DLC_LIST.write_text("".join(name + "\n" for name in included))
+    # "<package file> <id>": the id is the game's own package number
+    # (000info/packageNN.dat), the same for the English and the Japanese
+    # package of a DLC, so online play compares DLC by it, not by file name.
+    DLC_LIST.write_text("".join(f"{name} {dlc_id(name)}\n" for name in included))
     if not included:
         print("      no DLC packages in dlc/")
     if not modules and not update:
@@ -2481,7 +2495,7 @@ def step_install(out_dir: Path, target: Path, dlc_dir: Path | None,
             shutil.rmtree(target_assets)
         shutil.copytree(assets, target_assets, ignore=shutil.ignore_patterns("dlc"))
     install_copy(out_dir / DLC_LIST_NAME, target / DLC_LIST_NAME)
-    built = set((out_dir / DLC_LIST_NAME).read_text().split())
+    built = dlc_list_names((out_dir / DLC_LIST_NAME).read_text())
     packages = [p for p in find_packages(dlc_dir or DLC_DIR) if p.name in built]
     if packages:
         (target / "dlc").mkdir(exist_ok=True)
