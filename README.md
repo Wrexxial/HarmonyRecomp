@@ -97,7 +97,7 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F2 | FPS counter |
 | F3 | SDK debug overlay (frame times) |
 | F4 | All SDK runtime settings |
-| F6 | Settings menu: graphics, controls, online ("Save" writes `harmonyrecomp.toml`); its title shows your HarmonyRecomp version |
+| F6 | Settings menu: graphics, controls, online, saves ("Save" writes `harmonyrecomp.toml`); its title shows your HarmonyRecomp version |
 | `^` | Log console |
 
 ### Controls
@@ -120,7 +120,7 @@ Every key can be changed in F6 > Controls > Keyboard & mouse: click the key, the
 
 ### Saves and language
 
-Save data is stored in `Documents\harmonyrecomp\B13EBABEBABEBABE\58410A7A\00000001\dchd_savedata\` (back up this folder to keep your progress). Saves from an Xbox 360 are STFS packages; extracting their files (e.g. with Horizon or Velocity) into this folder might work but is untested, the game may check that the save belongs to the profile.
+Save data is stored in `Documents\harmonyrecomp\B13EBABEBABEBABE\58410A7A\00000001\dchd_savedata\`. **F6 > Saves** shows the folder, opens it, and makes a dated backup with one click (`Documents\harmonyrecomp\save-backups\`). Saves from an Xbox 360 are STFS packages; extracting their files (e.g. with Horizon or Velocity) into this folder might work but is untested, the game may check that the save belongs to the profile.
 
 The game's language (text and voices) follows the Xbox 360 system language: F6 > Graphics > Language, then restart (`user_language` in `harmonyrecomp.toml`: 1 English, 2 Japanese, 3 German, 4 French, 5 Spanish, 6 Italian).
 

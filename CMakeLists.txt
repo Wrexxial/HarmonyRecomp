@@ -16,6 +16,7 @@ set(HARMONYRECOMP_SOURCES
     src/graphics_menu.cpp
     src/notice.cpp
     src/update_check.cpp
+    src/saves.cpp
     src/controller_remap.cpp
     src/controls_menu.cpp
     src/online_menu.cpp
@@ -42,7 +43,7 @@ rexglue_setup_target(harmonyrecomp)
 # Netplay lobby service (src/netplay/udp.cpp): Winsock and adapter enumeration;
 # winmm for the 1 ms timer resolution (harmonyrecomp_app.h).
 if(WIN32)
-    target_link_libraries(harmonyrecomp PRIVATE ws2_32 iphlpapi winmm winhttp)
+    target_link_libraries(harmonyrecomp PRIVATE ws2_32 iphlpapi winmm winhttp shell32)
     # Symbol map, to resolve the offsets in logs/crash_*.txt.
     target_link_options(harmonyrecomp PRIVATE "LINKER:/MAP:harmonyrecomp.map")
 endif()

@@ -28,6 +28,7 @@
 #include "dlc.h"
 #include "game_fixes.h"
 #include "graphics_menu.h"
+#include "saves.h"
 #include "netplay/netplay.h"
 #include "notice.h"
 #include "update_check.h"
@@ -118,6 +119,7 @@ class HarmonyrecompApp : public rex::ReXApp {
   void OnPostLaunchModule(rex::system::XThread* thread) override {
     (void)thread;
     harmony::InstallDlcPackages(runtime());
+    harmony::saves::SetUserDataRoot(runtime()->user_data_root());
   }
 
   // Logging is up now; report a settings file the SDK could not parse. The SDK

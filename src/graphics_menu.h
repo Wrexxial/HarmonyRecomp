@@ -47,7 +47,7 @@ class FpsCounterDialog final : public rex::ui::ImGuiDialog {
   double fps_ = 0.0;
 };
 
-// Settings window (F6) with Graphics, Controls and Online tabs. Changes apply to
+// Settings window (F6) with Graphics, Controls, Online and Saves tabs. Changes apply to
 // the running session where possible; "Save" writes them to harmonyrecomp.toml.
 class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
  public:
@@ -60,10 +60,12 @@ class GraphicsMenuDialog final : public rex::ui::ImGuiDialog {
 
  private:
   void DrawGraphics();
+  void DrawSaves();
 
   std::filesystem::path config_path_;
   ToggleFps toggle_fps_;
   std::string status_;
+  std::string saves_status_;
   // Values at startup, to flag settings that only apply after a restart.
   std::string start_scale_;
   std::string start_aa_;

@@ -2,6 +2,8 @@
 
 #include "graphics_menu.h"
 
+#include "saves.h"
+
 #include <iterator>
 #include <string_view>
 #include <utility>
@@ -195,6 +197,10 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
       online_.Draw();
       ImGui::EndTabItem();
     }
+    if (ImGui::BeginTabItem("Saves")) {
+      DrawSaves();
+      ImGui::EndTabItem();
+    }
     ImGui::EndTabBar();
   }
 
@@ -211,6 +217,27 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
   }
 
   ImGui::End();
+}
+
+void GraphicsMenuDialog::DrawSaves() {
+  const auto folder = saves::SaveFolder();
+  ImGui::TextDisabled("Your save data:");
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+  ImGui::TextWrapped("%s", folder.string().c_str());
+  ImGui::PopTextWrapPos();
+  if (ImGui::Button("Open folder")) saves::OpenFolder(folder);
+  ImGui::Spacing();
+  if (ImGui::Button("Back up now")) saves_status_ = saves::BackupNow();
+  ImGui::SameLine();
+  if (ImGui::Button("Open backups")) saves::OpenFolder(saves::BackupFolder());
+  if (!saves_status_.empty()) ImGui::TextDisabled("%s", saves_status_.c_str());
+  ImGui::TextDisabled("%d backup(s) so far.", saves::BackupCount());
+  ImGui::Spacing();
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+  ImGui::TextDisabled(
+      "To restore a backup, quit the game and copy the backup's contents back into the folder "
+      "above.");
+  ImGui::PopTextWrapPos();
 }
 
 void GraphicsMenuDialog::DrawGraphics() {
