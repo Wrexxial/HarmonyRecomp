@@ -2206,6 +2206,62 @@ SDK_PATCHES += [
     ),
 ]
 
+# SDK change 30: the window size no longer sets the game's video mode.
+#
+# Without an explicit video_mode_width/height the video mode followed
+# window_width/height. HarmonyRecomp remembers the window size there since
+# v0.6, so a resized window changed the resolution the game renders for and
+# the picture's shape (stretched in a non-16:9 window). The video mode now
+# comes from video_mode_* or the resolution preset only.
+SDK_PATCHES += [
+    (
+        "src/kernel/xboxkrnl/xboxkrnl_video.cpp",
+        "    if (rex::cvar::HasNonDefaultValue(\"window_width\") && REXCVAR_GET(window_width) > 0) {\n",
+        "    // Not the window size (HarmonyRecomp remembers it there).\n"
+        "    if (false && REXCVAR_GET(window_width) > 0) {\n",
+    ),
+    (
+        "src/kernel/xboxkrnl/xboxkrnl_video.cpp",
+        "    if (rex::cvar::HasNonDefaultValue(\"window_height\") && REXCVAR_GET(window_height) > 0) {\n",
+        "    // Not the window size (HarmonyRecomp remembers it there).\n"
+        "    if (false && REXCVAR_GET(window_height) > 0) {\n",
+    ),
+]
+
+# SDK change 31: optionally present the picture in its own shape.
+#
+# The presenter shapes the guest picture by the video mode (16:9). With the
+# experimental aspect ratios (src/widescreen.cpp) the game renders e.g.
+# 2520x1080; present_guest_aspect makes the presenter use the picture's own
+# shape, so a 21:9 picture is letterboxed in a 16:9 window instead of
+# squeezed. For a 16:9 picture both are the same.
+SDK_PATCHES += [
+    (
+        "src/graphics/command_processor.cpp",
+        "REXCVAR_DEFINE_BOOL(vsync, true, \"GPU\", \"Enable vertical sync\");\n",
+        "REXCVAR_DEFINE_BOOL(vsync, true, \"GPU\", \"Enable vertical sync\");\n"
+        "REXCVAR_DEFINE_BOOL(present_guest_aspect, false, \"GPU\",\n"
+        "                    \"Present the game's picture in its own shape, not the video mode's\");\n",
+    ),
+]
+for _backend in ("d3d12", "vulkan"):
+    SDK_PATCHES += [
+        (
+            f"src/graphics/{_backend}/command_processor.cpp",
+            "  uint32_t display_height = std::max(uint32_t(1), uint32_t(video_mode.display_height));\n",
+            "  uint32_t display_height = std::max(uint32_t(1), uint32_t(video_mode.display_height));\n"
+            "  if (REXCVAR_GET(present_guest_aspect) && guest_output_width && guest_output_height) {\n"
+            "    display_width = guest_output_width;\n"
+            "    display_height = guest_output_height;\n"
+            "  }\n",
+        ),
+        (
+            f"src/graphics/{_backend}/command_processor.cpp",
+            "namespace rex::graphics::",
+            "REXCVAR_DECLARE(bool, present_guest_aspect);\n\nnamespace rex::graphics::",
+        ),
+    ]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()

@@ -55,4 +55,7 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
               new_height, num, den);
   r11.u64 = new_width;
   r10.u64 = new_height;
+  // The presenter shapes the picture by the video mode (16:9); make it use the
+  // picture's own shape, so it is letterboxed instead of squeezed (SDK change 31).
+  rex::cvar::SetFlagByName("present_guest_aspect", "true");
 }
