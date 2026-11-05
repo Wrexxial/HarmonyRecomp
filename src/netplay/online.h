@@ -81,6 +81,7 @@ struct PeerInfo {
   std::string name;
   bool direct = false;   // false: relayed through the server (or still trying)
   bool reachable = false;
+  int ping_ms = -1;      // round trip, -1 while unknown (or an older version)
 };
 std::vector<PeerInfo> Peers();
 

@@ -337,10 +337,19 @@ void OnlineTab::DrawRooms() {
   if (!peers.empty()) {
     ImGui::TextDisabled("Players connected online:");
     for (const auto& p : peers) {
-      ImGui::BulletText("%s  %s", p.name.c_str(),
-                        !p.reachable ? "not responding"
-                        : p.direct   ? "direct"
-                                     : "via relay");
+      const char* path = !p.reachable ? "not responding" : p.direct ? "direct" : "via relay";
+      if (p.reachable && p.ping_ms >= 0) {
+        // Green below 80 ms, yellow below 160 ms, red above.
+        const ImVec4 colour = p.ping_ms < 80    ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f)
+                              : p.ping_ms < 160 ? ImVec4(0.95f, 0.85f, 0.3f, 1.0f)
+                                                : ImVec4(0.95f, 0.4f, 0.35f, 1.0f);
+        ImGui::Bullet();
+        ImGui::Text("%s  %s", p.name.c_str(), path);
+        ImGui::SameLine();
+        ImGui::TextColored(colour, "%d ms", p.ping_ms);
+      } else {
+        ImGui::BulletText("%s  %s", p.name.c_str(), path);
+      }
     }
   }
 }

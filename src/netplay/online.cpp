@@ -24,7 +24,9 @@ enum : uint8_t {
   kHello = 1, kPing, kRoomOpen, kRoomClose, kRoomList, kConnect, kRelay, kBye,
   kWelcome = 101, kPong, kRoomOpened, kRoomListResult, kConnected, kPeer, kRelayed, kError,
 };
-enum : uint8_t { kPunch = 1, kPunchAck, kData, kKeepalive };
+// kKeepalive carries the sender's clock (v0.6+); kKeepaliveAck echoes it
+// for the ping shown in F6 > Online. Older versions ignore both extras.
+enum : uint8_t { kPunch = 1, kPunchAck, kData, kKeepalive, kKeepaliveAck };
 
 constexpr uint32_t kVirtualNet = 0x0A420000;  // 10.66.0.0/16
 constexpr auto kPingInterval = std::chrono::seconds(10);
@@ -120,6 +122,7 @@ struct Peer {
   Clock::time_point stalled_at{};   // game packets stopped (logged once)
   Clock::time_point next_keepalive{};
   uint64_t nonce = 0;
+  int rtt_ms = -1;  // from the last answered keepalive, -1 = not known yet
 };
 
 // Game packets normally flow many times a second while a session runs; a gap
@@ -295,9 +298,30 @@ void HandlePeerFrame(const uint8_t* data, size_t size, std::optional<udp::Endpoi
       Deliver(src_vip, r);
       return;
     case kKeepalive: {
+      uint64_t sent = r.u64();  // missing from older versions
       std::lock_guard lock(s.mutex);
       auto it = s.peers.find(src_vip);
-      if (it != s.peers.end()) it->second.last_heard = Clock::now();
+      if (it == s.peers.end()) return;
+      it->second.last_heard = Clock::now();
+      if (r.ok()) {
+        Writer w = PeerMsg(kKeepaliveAck);
+        w.u32(s.vip);
+        w.u64(sent);
+        SendFrame(it->second, w);
+      }
+      return;
+    }
+    case kKeepaliveAck: {
+      uint64_t sent = r.u64();
+      if (!r.ok()) return;
+      std::lock_guard lock(s.mutex);
+      auto it = s.peers.find(src_vip);
+      if (it == s.peers.end()) return;
+      const auto now = Clock::now();
+      it->second.last_heard = now;
+      const uint64_t now_us = uint64_t(
+          std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count());
+      if (now_us >= sent) it->second.rtt_ms = int((now_us - sent) / 1000);
       return;
     }
   }
@@ -446,6 +470,8 @@ void Tick() {
       peer.next_keepalive = now + kPeerKeepalive;
       Writer w = PeerMsg(kKeepalive);
       w.u32(s.vip);
+      w.u64(uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+                         now.time_since_epoch()).count()));
       SendFrame(peer, w);
     }
     ++it;
@@ -633,7 +659,8 @@ std::vector<PeerInfo> Peers() {
   std::vector<PeerInfo> out;
   auto now = Clock::now();
   for (const auto& [vip, peer] : s.peers) {
-    out.push_back({vip, peer.name, peer.direct.has_value(), now - peer.last_heard < kPeerTimeout});
+    out.push_back({vip, peer.name, peer.direct.has_value(), now - peer.last_heard < kPeerTimeout,
+                   peer.rtt_ms});
   }
   return out;
 }
