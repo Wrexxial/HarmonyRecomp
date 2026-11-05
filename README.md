@@ -46,6 +46,17 @@ Nothing of the game is downloaded: everything is built from your own copy on you
 
 **Updating:** the game tells you at startup when a newer release is out (it asks GitHub once; `check_for_updates = false` switches that off). Download the newest `HarmonyRecomp-Setup.exe` and run it with the same install folder; your settings and saves are kept. (Setups before v0.3.3 could reuse an old download: if an update to v0.3.3 or newer seems to change nothing, delete the `.setup` folder in the install folder and run it again.) If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
 
+### Linux and Steam Deck
+
+1. Download **`harmonyrecomp-install.sh`** from the [latest release](../../releases/latest) (Steam Deck: in Desktop Mode).
+2. Run it in a terminal: `bash harmonyrecomp-install.sh` (or right-click > Run in Konsole). It asks for your game file and, optionally, your DLC folder.
+3. It downloads the build package and a self-contained compiler (about 180 MB; nothing needs to be installed, also not on SteamOS), builds the game from your files (about 30 minutes on a Steam Deck) and installs it into `~/Games/HarmonyRecomp`, with an entry in the application menu.
+4. Steam Deck Game Mode: in Desktop Mode, Steam > Games > **Add a Non-Steam Game to My Library**, pick HarmonyRecomp. Do not set a Proton version: it is a Linux program.
+
+Needs glibc 2.39 or newer (SteamOS 3.6+, Arch, Fedora 40+, Ubuntu 24.04+) and a Vulkan driver. Saves and settings are in `~/.local/share/harmonyrecomp`. Offline install: put `harmonyrecomp-linux-package.tar.gz` and `harmonyrecomp-linux-toolchain.tar.xz` next to the script.
+
+The Windows build also runs under Proton; since v0.6.0 online play works there too (the game's port 1000 is mapped to UDP 49000, which Linux allows without root).
+
 The rest of this page is for building by hand and for developers.
 
 ## Requirements
@@ -220,7 +231,7 @@ Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion
 
 ## Planned
 
-Next steps, roughly in this order: online play without a VPN (room codes and public lobbies), widescreen and Linux/Steam Deck, and later mod support.
+Next steps, roughly in this order: widescreen and ultrawide, an Android experiment, and later mod support.
 
 ## Credits
 

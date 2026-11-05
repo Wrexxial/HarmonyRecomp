@@ -75,8 +75,15 @@ else
   BASE="https://github.com/$REPO/releases/download/$TAG"
 fi
 mkdir -p "$CACHE"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 fetch() {
   local name="$1"
+  # Offline install: the archives next to this script are used as they are.
+  if [ -f "$HERE/$name" ]; then
+    echo "using $HERE/$name"
+    cp "$HERE/$name" "$CACHE/$name"
+    return
+  fi
   if [ -f "$CACHE/$name" ] && [ "$(cat "$CACHE/$name.ok" 2>/dev/null)" = "$TAG" ] && [ "$TAG" != "latest" ]; then
     echo "already downloaded: $name"
     return
