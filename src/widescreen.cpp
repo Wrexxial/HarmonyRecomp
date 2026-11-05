@@ -122,26 +122,36 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
 // 1920x1080 orthographic projection, scale (1/960, 1/540, ...) from
 // 0x821F9A70, and SRN2D_UI_PERS with a fixed 16:9 aspect (0.5625 at
 // 0x821DF9B4). On a wider picture that stretched the HUD, the menus and the
-// title pictures. The hooks give them the picture's real shape: the UI keeps
-// its 1080 rows and gets a wider (or narrower) span, centred like before.
+// title pictures. The hooks give them the picture's real shape, centred like
+// before.
 
-// Right after "lvx128 v63,r0,r23" (0x82471D88) loaded the UI scale vector.
+// Right after "lvx128 v63,r0,r23" (0x82471D88) loaded the UI scale vector
+// (1/960, 1/540, ...). A wider picture gets a wider UI span (the UI keeps its
+// 1080 rows), a taller one (16:10) a taller span (it keeps its 1920 columns),
+// so nothing of the UI is cut off.
 void HarmonyUiOrthoScale(PPCVRegister& v63) {
   if (!g_width || !g_height || !REXCVAR_GET(aspect_ratio_ui_fix)) return;
-  const float half_width = 540.0f * float(g_width) / float(g_height);
+  const double aspect = double(g_width) / double(g_height);
+  const bool wider = aspect * 9.0 > 16.0;
+  const float find = wider ? 1.0f / 960.0f : 1.0f / 540.0f;
+  const float half = wider ? float(540.0 * aspect) : float(960.0 / aspect);
   for (float& value : v63.f32) {
-    if (std::abs(value - 1.0f / 960.0f) < 1e-7f) {
-      value = 1.0f / half_width;
-      REXLOG_INFO("[widescreen] UI layers: {} units wide instead of 1920", 2 * half_width);
+    if (std::abs(value - find) < 1e-7f) {
+      value = 1.0f / half;
+      REXLOG_INFO("[widescreen] UI layers: {:.0f}x{:.0f} units instead of 1920x1080",
+                  wider ? 2 * half : 1920.0f, wider ? 1080.0f : 2 * half);
       return;
     }
   }
   REXLOG_WARN("[widescreen] UI scale vector not found: the UI stays stretched");
 }
 
-// Right before "fmuls f0,f13,f0" (0x82471E1C): f0 is the 16:9 aspect factor.
+// Right before "fmuls f0,f13,f0" (0x82471E1C): f0 is the 16:9 aspect factor
+// that turns the vertical scale into the horizontal one. Only for wider
+// pictures: on a taller one this would cut the sides off.
 void HarmonyUiPerspectiveAspect(PPCRegister& f0) {
   if (!g_width || !g_height || !REXCVAR_GET(aspect_ratio_ui_fix)) return;
+  if (uint64_t(g_width) * 9 <= uint64_t(g_height) * 16) return;
   if (std::abs(f0.f64 - 0.5625) > 1e-6) {
     REXLOG_WARN("[widescreen] UI perspective: unexpected factor {}", f0.f64);
     return;
