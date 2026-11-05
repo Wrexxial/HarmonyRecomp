@@ -2263,6 +2263,32 @@ for _backend in ("d3d12", "vulkan"):
         ),
     ]
 
+# SDK change 32: RenderDoc was loaded into the game on Linux when installed.
+#
+# RenderDocAPI::CreateIfConnected meant to use RenderDoc only when it is
+# already injected, but on Linux dlopen("librenderdoc.so") loads it from the
+# system when it is installed (SteamOS has it): the game then ran under
+# RenderDoc's capture layer ("Capturing Vulkan ... F12, PrtScrn to capture"
+# in the corner) and slower. Only an already loaded RenderDoc is used now.
+SDK_PATCHES += [
+    (
+        "src/ui/renderdoc_api.cpp",
+        "  if (!renderdoc_api->library_.Load(platform::lib_names::kRenderDoc)) {\n",
+        "#if !defined(_WIN32)\n"
+        "  // Only when RenderDoc is already in the process; never load it from disk.\n"
+        "  if (!dlopen(platform::lib_names::kRenderDoc, RTLD_NOW | RTLD_NOLOAD)) {\n"
+        "    return nullptr;\n"
+        "  }\n"
+        "#endif\n"
+        "  if (!renderdoc_api->library_.Load(platform::lib_names::kRenderDoc)) {\n",
+    ),
+    (
+        "src/ui/renderdoc_api.cpp",
+        "#include <rex/ui/renderdoc_api.h>\n",
+        "#include <rex/ui/renderdoc_api.h>\n\n#if !defined(_WIN32)\n#include <dlfcn.h>\n#endif\n",
+    ),
+]
+
 
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
