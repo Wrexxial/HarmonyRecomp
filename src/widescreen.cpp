@@ -51,7 +51,11 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
   if (!ParseRatio(REXCVAR_GET(aspect_ratio), &num, &den) || num * 9 == den * 16) return;
   uint32_t new_width = width;
   uint32_t new_height = height;
-  if (num * 9 > den * 16) {
+  if (num >= 320 && den >= 180) {
+    // An exact size ("2400x1080"), for finding what the game's tiling allows.
+    new_width = static_cast<uint32_t>(num);
+    new_height = static_cast<uint32_t>(den);
+  } else if (num * 9 > den * 16) {
     new_width = RoundTo(double(height) * num / den, 160);  // wider: keep the height
   } else {
     new_height = RoundTo(double(width) * den / num, 16);  // taller: keep the width
