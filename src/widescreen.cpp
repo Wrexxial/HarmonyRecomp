@@ -8,6 +8,8 @@
 // letterboxes it into the window. What the game does with the extra room
 // (camera, HUD) is what this experiment is for.
 
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 
@@ -34,11 +36,44 @@ bool ParseRatio(const std::string& text, int* num, int* den) {
   return true;
 }
 
-// Sizes in whole EDRAM tiles (80x16 pixels at 32 bits per pixel, a width of
-// two tiles keeps texture rows 32-pixel aligned too): 2520 wide (31.5 tiles)
-// showed the bottom rows wrapped to the top.
 uint32_t RoundTo(double value, uint32_t step) {
   return static_cast<uint32_t>((value + step / 2.0) / step) * step;
+}
+
+// The Xbox 360 renders into 10 MB of EDRAM. The game always splits the screen
+// into two horizontal strips (predicated tiling), each of which must fit with
+// 8 bytes per pixel (colour + depth): at 2560 wide only 512 of 540 rows fit,
+// and the missing bottom rows showed a copy of the top. 2400x1080 fits.
+constexpr uint64_t kEdramBytes = 10ull * 1024 * 1024;
+bool FitsEdram(uint32_t width, uint32_t height) {
+  const uint64_t rows = (height / 2 + 15) / 16 * 16;  // one strip, in whole 16-row tiles
+  return uint64_t(width) * rows * 8 <= kEdramBytes;
+}
+
+// The biggest picture of the ratio num:den that fits, starting at the game's
+// own size: width in steps of 160 (two 80-pixel tiles), height in steps of 16.
+// Of the heights that fit (up to 64 rows below the first), the one whose
+// rounded width comes closest to the ratio wins.
+void FitRatio(int num, int den, uint32_t width, uint32_t height, uint32_t* out_w,
+              uint32_t* out_h) {
+  const double ratio = double(num) / den;
+  uint32_t start = num * 9 > den * 16 ? height : RoundTo(double(width) * den / num, 16);
+  *out_w = width;
+  *out_h = height;
+  double best = 1e9;
+  uint32_t first = 0;
+  for (uint32_t h = start; h >= height / 2; h -= 16) {
+    const uint32_t w = RoundTo(h * ratio, 160);
+    if (!FitsEdram(w, h)) continue;
+    if (!first) first = h;
+    if (h + 64 < first) break;
+    const double error = std::abs(double(w) / h - ratio) / ratio;
+    if (error < best - 0.001) {
+      best = error;
+      *out_w = w;
+      *out_h = h;
+    }
+  }
 }
 
 }  // namespace
@@ -52,13 +87,15 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
   uint32_t new_width = width;
   uint32_t new_height = height;
   if (num >= 320 && den >= 180) {
-    // An exact size ("2400x1080"), for finding what the game's tiling allows.
+    // An exact size ("2400x1080"), used as it is.
     new_width = static_cast<uint32_t>(num);
     new_height = static_cast<uint32_t>(den);
-  } else if (num * 9 > den * 16) {
-    new_width = RoundTo(double(height) * num / den, 160);  // wider: keep the height
+    if (!FitsEdram(new_width, new_height)) {
+      REXLOG_WARN("[widescreen] {}x{} is too big for the game's EDRAM tiling: the bottom "
+                  "rows will show a copy of the top", new_width, new_height);
+    }
   } else {
-    new_height = RoundTo(double(width) * den / num, 16);  // taller: keep the width
+    FitRatio(num, den, width, height, &new_width, &new_height);
   }
   REXLOG_INFO("[widescreen] back buffer {}x{} -> {}x{} ({}:{})", width, height, new_width,
               new_height, num, den);
