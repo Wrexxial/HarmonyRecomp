@@ -3,6 +3,7 @@
 #include "update_check.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 #include <regex>
@@ -90,7 +91,23 @@ std::string FetchLatestRelease() {
   return body;
 }
 #else
-std::string FetchLatestRelease() { return {}; }
+// Linux (Steam Deck): the curl program, present on SteamOS and practically
+// every distribution; without it the check is skipped like without internet.
+std::string FetchLatestRelease() {
+  std::string command = std::string("curl -fsSL --max-time 10 -H 'Accept: application/vnd.github+json' "
+                                    "-A HarmonyRecomp-update-check https://api.github.com/repos/") +
+                        kRepo + "/releases/latest 2>/dev/null";
+  std::string body;
+  if (FILE* pipe = popen(command.c_str(), "r")) {
+    char buffer[4096];
+    size_t n;
+    while ((n = fread(buffer, 1, sizeof(buffer), pipe)) > 0 && body.size() < 512 * 1024) {
+      body.append(buffer, n);
+    }
+    pclose(pipe);
+  }
+  return body;
+}
 #endif
 
 void Check() {
@@ -122,15 +139,22 @@ void Check() {
     std::lock_guard lock(g_mutex);
     g_available = latest;
   }
-  notice::Post("HarmonyRecomp " + latest + " is available (you have " + current +
-               "). Run the new setup from github.com/" + kRepo +
-               "/releases - online play needs everyone on the same version.",
+  notice::Post("HarmonyRecomp " + latest + " is available (you have " + current + "). " +
+                   UpdateHowTo() + " - online play needs everyone on the same version.",
                20.0);
 }
 
 }  // namespace
 
 const char* BuildVersion() { return HARMONYRECOMP_VERSION; }
+
+std::string UpdateHowTo() {
+#ifdef _WIN32
+  return std::string("Run the new setup from github.com/") + kRepo + "/releases";
+#else
+  return std::string("Run the new install script from github.com/") + kRepo + "/releases";
+#endif
+}
 
 void StartUpdateCheck() {
   if (!REXCVAR_GET(check_for_updates)) return;

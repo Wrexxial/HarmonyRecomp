@@ -203,7 +203,7 @@ void GraphicsMenuDialog::OnDraw(ImGuiIO& io) {
 
   if (const std::string update = AvailableUpdate(); !update.empty()) {
     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "Update available: %s", update.c_str());
-    ImGui::TextDisabled("Run the new setup from github.com/Wrexxial/HarmonyRecomp/releases");
+    ImGui::TextDisabled("%s", UpdateHowTo().c_str());
     ImGui::Separator();
   }
 

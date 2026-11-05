@@ -17,6 +17,9 @@ const char* BuildVersion();
 
 void StartUpdateCheck();
 
+// How to update on this system ("Run the new setup from github.com/...").
+std::string UpdateHowTo();
+
 // Newer release found by the check, empty if none (yet).
 std::string AvailableUpdate();
 
