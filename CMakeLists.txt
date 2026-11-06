@@ -23,6 +23,7 @@ set(HARMONYRECOMP_SOURCES
     src/online_menu.cpp
     src/crash_log.cpp
     src/dlc.cpp
+    src/framerate_fixes.cpp
     src/game_fixes.cpp
     src/netplay/gamesock.cpp
     src/netplay/hooks.cpp

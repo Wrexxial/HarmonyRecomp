@@ -127,3 +127,23 @@ registers = ["v63"]
 address = 0x82471E1C
 name = "HarmonyUiPerspectiveAspect"
 registers = ["f0"]
+
+# src/framerate_fixes.cpp: logic that adds 1 per frame instead of the frame's
+# time, so it ran faster above 60 FPS. The hook runs before "fadds f0,f0,f27"
+# (f27 = 1.0; f28 = the frame time in seconds).
+# Amalaric Sniper (sub_822EE1F8): reaction time before drawing the bow.
+[[midasm_hook]]
+address = 0x822EE824
+name = "HarmonyFrameStep"
+registers = ["f0", "f28"]
+
+# Amalaric Sniper: turning the bow towards the player (two variants).
+[[midasm_hook]]
+address = 0x822EFCE8
+name = "HarmonyFrameStep"
+registers = ["f0", "f28"]
+
+[[midasm_hook]]
+address = 0x822F0384
+name = "HarmonyFrameStep"
+registers = ["f0", "f28"]
