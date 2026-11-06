@@ -2290,6 +2290,38 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 33: frames and overlays froze on Linux while an overlay was open.
+#
+# With an overlay open (FPS counter, F6 menu, message boxes) the picture is
+# painted by the UI thread when asked to: the guest output thread asks with
+# Window::RequestPaint when a frame is ready. On Linux that was
+# gtk_widget_queue_draw from the guest output thread; GTK is not thread-safe
+# and it did not wake the GTK main loop, so a frame was painted only when some
+# other event (input) woke it: the picture froze or ran at ~20 FPS, the
+# overlays lagged behind the input, and the exit question could not be
+# answered (Steam Deck). The request now goes through g_idle_add, which may be
+# called from any thread and wakes the main loop.
+SDK_PATCHES += [
+    (
+        "src/ui/window_gtk.cpp",
+        "void GTKWindow::RequestPaintImpl() {\n  gtk_widget_queue_draw(drawing_area_);\n}\n",
+        "void GTKWindow::RequestPaintImpl() {\n"
+        "  // Called from other threads as well (the guest output thread when a frame\n"
+        "  // is ready); GTK is not thread-safe, and gtk_widget_queue_draw from another\n"
+        "  // thread did not wake the main loop. g_idle_add may be called from any\n"
+        "  // thread; the reference keeps the widget alive until the idle runs.\n"
+        "  g_idle_add_full(\n"
+        "      G_PRIORITY_DEFAULT,\n"
+        "      [](gpointer widget) -> gboolean {\n"
+        "        gtk_widget_queue_draw(GTK_WIDGET(widget));\n"
+        "        return G_SOURCE_REMOVE;\n"
+        "      },\n"
+        "      g_object_ref(drawing_area_), g_object_unref);\n"
+        "}\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
