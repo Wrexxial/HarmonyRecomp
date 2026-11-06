@@ -11,15 +11,17 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/ppc/context.h>
 
-REXCVAR_DEFINE_STRING(aspect_ratio, "16:9", "Video",
-                      "Experimental: the game's picture aspect ratio, e.g. 16:10, 21:9, 32:9 "
-                      "(16:9 is the original; needs a restart)");
+REXCVAR_DEFINE_STRING(aspect_ratio, "auto", "Video",
+                      "Experimental: the game's picture aspect ratio, e.g. 16:10, 21:9, 32:9, or "
+                      "an exact size like 1280x800 (16:9 is the original; auto = 16:9, on a "
+                      "Steam Deck its screen's 1280x800; needs a restart)");
 
 REXCVAR_DEFINE_BOOL(aspect_ratio_ui_fix, true, "Video",
                     "With another aspect_ratio: draw HUD and menus in their real shape, centred "
@@ -80,6 +82,23 @@ void FitRatio(int num, int den, uint32_t width, uint32_t height, uint32_t* out_w
   }
 }
 
+// Steam sets SteamDeck=1 for games it starts on a Steam Deck; started from
+// the desktop without Steam, the board name tells (Jupiter: LCD, Galileo: OLED).
+bool IsSteamDeck() {
+  const char* env = std::getenv("SteamDeck");
+  if (env && std::string(env) == "1") return true;
+#if !defined(_WIN32)
+  if (FILE* f = std::fopen("/sys/devices/virtual/dmi/id/product_name", "r")) {
+    char name[64] = {};
+    const bool read = std::fgets(name, sizeof(name), f) != nullptr;
+    std::fclose(f);
+    const std::string product = read ? name : "";
+    return product.rfind("Jupiter", 0) == 0 || product.rfind("Galileo", 0) == 0;
+  }
+#endif
+  return false;
+}
+
 // The picture the game renders, once HarmonyBackBufferSize changed it (0: unchanged).
 uint32_t g_width = 0;
 uint32_t g_height = 0;
@@ -91,7 +110,13 @@ void HarmonyBackBufferSize(PPCRegister& r10, PPCRegister& r11) {
   const uint32_t width = r11.u32;
   const uint32_t height = r10.u32;
   int num = 16, den = 9;
-  if (!ParseRatio(REXCVAR_GET(aspect_ratio), &num, &den) || num * 9 == den * 16) return;
+  std::string setting = REXCVAR_GET(aspect_ratio);
+  if (setting == "auto") {
+    // On a Steam Deck: render at its screen's native 1280x800 (16:10)
+    // instead of 16:9 with black bars.
+    setting = IsSteamDeck() ? "1280x800" : "16:9";
+  }
+  if (!ParseRatio(setting, &num, &den) || num * 9 == den * 16) return;
   uint32_t new_width = width;
   uint32_t new_height = height;
   if (num >= 320 && den >= 180) {
