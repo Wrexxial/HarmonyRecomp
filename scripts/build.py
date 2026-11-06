@@ -2322,6 +2322,48 @@ SDK_PATCHES += [
 ]
 
 
+# SDK change 34: a held key toggled F2/F6 over and over on Linux.
+#
+# GTK sends a key press for every auto-repeat, and the key binds ran on every
+# press, so holding F6 (or a Steam Deck button mapped to it, which Steam
+# Input may hold for a moment) opened and closed the menu several times a
+# second; each time the game lost and got back the controller, which left it
+# with stuck or missing input. GTK key events now say whether the key was
+# already down (as on Windows), and the binds ignore repeats.
+SDK_PATCHES += [
+    (
+        "src/ui/window_gtk.cpp",
+        "#include <algorithm>\n#include <string>\n",
+        "#include <algorithm>\n#include <string>\n#include <unordered_set>\n",
+    ),
+    (
+        "src/ui/window_gtk.cpp",
+        "  KeyEvent e(this, TranslateGdkKeyvalToVirtualKey(event->keyval), 1, event->type == GDK_KEY_RELEASE,\n",
+        "  // Whether the key was already down: auto-repeat presses (GTK sends no\n"
+        "  // repeat flag), and always for a release, like Windows' bit 30.\n"
+        "  static std::unordered_set<guint16> keys_down;\n"
+        "  bool key_was_down = true;\n"
+        "  if (event->type == GDK_KEY_PRESS) {\n"
+        "    key_was_down = !keys_down.insert(event->hardware_keycode).second;\n"
+        "  } else if (event->type == GDK_KEY_RELEASE) {\n"
+        "    keys_down.erase(event->hardware_keycode);\n"
+        "  }\n"
+        "  KeyEvent e(this, TranslateGdkKeyvalToVirtualKey(event->keyval), 1, key_was_down,\n",
+    ),
+    (
+        "src/ui/rex_app.cpp",
+        "void ReXApp::OnKeyDown(ui::KeyEvent& e) {\n  rex::ui::ProcessKeyEvent(e);\n}\n",
+        "void ReXApp::OnKeyDown(ui::KeyEvent& e) {\n"
+        "  // A held key repeats; a bind (F2, F6, F11) acts once per press.\n"
+        "  if (e.prev_state()) {\n"
+        "    return;\n"
+        "  }\n"
+        "  rex::ui::ProcessKeyEvent(e);\n"
+        "}\n",
+    ),
+]
+
+
 def sdk_patch_hash() -> str:
     h = hashlib.sha256()
     for rel, old, new, *_ in SDK_PATCHES:
