@@ -21,6 +21,11 @@ void InstallDlcPackages(rex::Runtime* runtime);
 // Japanese package of a DLC. Older builds: the package file names.
 std::vector<std::string> BuiltDlcPackages();
 
+// The DLC id for an entry another player sent: builds before v0.6 sent the
+// package file names; a file name we have becomes its id, anything else
+// stays as it is.
+std::string DlcIdOf(const std::string& entry);
+
 // Readable name of a DLC id from BuiltDlcPackages() ("Simon (8-bit)").
 std::string DlcName(const std::string& id);
 

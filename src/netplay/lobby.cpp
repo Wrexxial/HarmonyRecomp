@@ -409,6 +409,8 @@ void HandleDatagram(const uint8_t* data, size_t size, const udp::Endpoint& from)
         if (!ReadInfo(r, &info) || !ReadAd(r, &f.ad)) return;
         f.build = std::move(info.build);
         f.dlc = std::move(info.dlc);
+        // v0.5 builds send package file names instead of package numbers.
+        for (auto& d : f.dlc) d = harmony::DlcIdOf(d);
         f.from = from;
         f.rtt_ms = rtt;
         {

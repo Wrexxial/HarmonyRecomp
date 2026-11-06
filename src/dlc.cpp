@@ -188,6 +188,14 @@ std::vector<std::string> BuiltDlcPackages() {
   return {ids.begin(), ids.end()};
 }
 
+std::string DlcIdOf(const std::string& entry) {
+  if (entry.rfind("package", 0) == 0) return entry;
+  bool found = false;
+  const auto list = BuiltList(&found);
+  auto it = list.find(entry);
+  return it != list.end() ? it->second : entry;
+}
+
 std::string DlcName(const std::string& id) {
   // The game's package numbers (000info/packageNN.dat of each DLC).
   static const std::map<std::string, std::string> kNames = {
