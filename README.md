@@ -20,12 +20,13 @@ Questions, help and news: **[Discord server](https://discord.gg/PEYdJ72aH)**
 
 ## Features
 
-- Runs the full game natively on Windows: all stages and characters of the base game
+- Runs the full game natively on Windows and on Linux / Steam Deck: all stages and characters of the base game
 - Settings menu (F6), usable with a controller:
-  - Graphics: resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), fullscreen
+  - Graphics: resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), borderless fullscreen (F11), aspect ratio (16:10, 21:9, 32:9, Steam Deck 1280x800; experimental)
   - Controls: controller button remapping, keyboard/mouse key bindings
-  - Online: co-op on/off, player name, own address, other players' addresses
-- FPS counter (F2)
+  - Online: co-op on/off, room codes, ping per player
+  - Saves: open the save folder, one-click backup
+- FPS counter with each online player's ping (F2)
 - **Online co-op without Xbox Live**: up to six players over LAN or a virtual LAN (Radmin VPN, ZeroTier, Tailscale)
 - **DLC support**: all characters and stage packs, from your own DLC packages and title update 2 (see [DLC](#dlc))
 - Crash reports in `logs/` to make bug reports useful
@@ -52,6 +53,7 @@ Nothing of the game is downloaded: everything is built from your own copy on you
 2. Run it in a terminal: `bash harmonyrecomp-install.sh` (or right-click > Run in Konsole). It asks for your game file and, optionally, your DLC folder.
 3. It downloads the build package and a self-contained compiler (about 180 MB; nothing needs to be installed, also not on SteamOS), builds the game from your files (about 30 minutes on a Steam Deck) and installs it into `~/Games/HarmonyRecomp`, with an entry in the application menu.
 4. Steam Deck Game Mode: in Desktop Mode, Steam > Games > **Add a Non-Steam Game to My Library**, pick HarmonyRecomp. Do not set a Proton version: it is a Linux program.
+5. Steam Deck tips: the game renders at the Deck's native 1280x800 by itself (F6 > Graphics > Aspect ratio "Auto"). To reach the F6 menu and the FPS counter without a keyboard, map F6 and F2 to the back buttons (L4/R4) in the controller settings of the game in Steam. A frame rate limit of 60 (F6 > Graphics) saves battery.
 
 Needs glibc 2.39 or newer (SteamOS 3.6+, Arch, Fedora 40+, Ubuntu 24.04+) and a Vulkan driver. Saves and settings are in `~/.local/share/harmonyrecomp`. Offline install: put `harmonyrecomp-linux-package.tar.gz` and `harmonyrecomp-linux-toolchain.tar.xz` next to the script.
 
@@ -109,6 +111,7 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F3 | SDK debug overlay (frame times) |
 | F4 | All SDK runtime settings |
 | F6 | Settings menu: graphics, controls, online, saves ("Save" writes `harmonyrecomp.toml`); its title shows your HarmonyRecomp version |
+| F11 | Borderless fullscreen on/off (remembered, like the window size) |
 | `^` | Log console |
 
 ### Controls
@@ -228,10 +231,12 @@ Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion
 ## Known issues
 
 - Text input in system dialogs (e.g. naming something) still needs a keyboard.
+- Other aspect ratios are experimental: the HUD and menus keep their shape and stay in the middle 16:9 area, and the title picture is cut at the top and bottom on ultrawide screens.
+- Above 60 FPS a few enemies may still act faster than intended (logic that counts frames). The Amalaric Sniper is fixed; please report others with their name.
 
 ## Planned
 
-Next steps, roughly in this order: widescreen and ultrawide, an Android experiment, and later mod support.
+Next steps, roughly in this order: polishing widescreen (HUD at the screen edges, title picture), more frame-rate fixes for enemies, an Android experiment, and later mod support.
 
 ## Credits
 
