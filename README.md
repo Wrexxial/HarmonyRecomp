@@ -50,7 +50,11 @@ Nothing of the game is downloaded: everything is built from your own copy on you
 ### Linux and Steam Deck
 
 1. Download **`harmonyrecomp-install.sh`** from the [latest release](../../releases/latest) (Steam Deck: in Desktop Mode).
-2. Run it in a terminal: `bash harmonyrecomp-install.sh` (or right-click > Run in Konsole). It asks for your game file and, optionally, your DLC folder.
+2. Open a terminal (Steam Deck: the application menu > System > **Konsole**) and run it with bash:
+   ```
+   bash ~/Downloads/harmonyrecomp-install.sh
+   ```
+   (Double-clicking it or "Run in Konsole" does not work, because downloaded files are not marked as executable: Konsole then says "Could not find ... starting /bin/bash instead".) It asks for your game file and, optionally, your DLC folder.
 3. It downloads the build package and a self-contained compiler (about 180 MB; nothing needs to be installed, also not on SteamOS), builds the game from your files (about 30 minutes on a Steam Deck) and installs it into `~/Games/HarmonyRecomp`, with an entry in the application menu.
 4. Steam Deck Game Mode: in Desktop Mode, Steam > Games > **Add a Non-Steam Game to My Library**, pick HarmonyRecomp. Do not set a Proton version: it is a Linux program.
 5. Steam Deck tips: the game renders at the Deck's native 1280x800 by itself (F6 > Graphics > Aspect ratio "Auto"). To reach the F6 menu and the FPS counter without a keyboard, map F6 and F2 to the back buttons (L4/R4) in the controller settings of the game in Steam. A frame rate limit of 60 (F6 > Graphics) saves battery.
