@@ -18,6 +18,7 @@ game on the player's machine from their own game file.
 from __future__ import annotations
 
 import argparse
+import io
 import subprocess
 import sys
 import tarfile
@@ -25,8 +26,35 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-LLVM_PROGRAMS = ("clang", "clang++", "lld", "ld.lld", "llvm-ar", "llvm-ranlib", "llvm-nm",
+LLVM_PROGRAMS = ("clang", "clang++", "lld", "llvm-ar", "llvm-ranlib", "llvm-nm",
                  "llvm-objcopy", "llvm-strip")
+# LLVM's lld needs libxml2 (and through it ICU), which SteamOS does not have in
+# that version ("libxml2.so.2: cannot open shared object file"); they come
+# along in lib/lld-deps, and ld.lld is a script that starts lld with them.
+LLD_DEPS = ("libxml2.so", "libicuuc.so", "libicudata.so", "liblzma.so")
+LD_LLD_WRAPPER = """#!/usr/bin/env bash
+# lld with the libraries it needs that the system may not have (libxml2, ICU).
+d="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$d/../lib/lld-deps${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec -a "$0" "$d/lld" "$@"
+"""
+
+
+def lld_deps(lld: Path) -> list[tuple[str, Path]]:
+    """(soname, file) of lld's libraries in LLD_DEPS, as ldd finds them here."""
+    out = subprocess.run(["ldd", str(lld)], capture_output=True, text=True, check=True).stdout
+    deps = []
+    for line in out.splitlines():
+        parts = line.split("=>")
+        if len(parts) != 2:
+            continue
+        soname = parts[0].strip()
+        target = parts[1].split("(")[0].strip()
+        if soname.startswith(LLD_DEPS) and target:
+            deps.append((soname, Path(target).resolve()))
+    if not any(name.startswith("libxml2") for name, _ in deps):
+        sys.exit(f"error: lld does not link libxml2 here? ldd says:\n{out}")
+    return deps
 CLANG_RT_UNUSED = ("asan", "ubsan", "tsan", "msan", "lsan", "hwasan", "memprof", "dfsan",
                    "fuzzer", "profile", "xray", "scudo", "orc", "stats", "cfi", "safestack",
                    "gwp_asan", "nsan", "rtsan", "ctx_profile")
@@ -56,7 +84,6 @@ def make_package(out: Path, sdk: Path, tag: str | None) -> None:
             data = (tag + "\n").encode()
             info = normalized(tarfile.TarInfo("release.txt"))
             info.size = len(data)
-            import io
             archive.addfile(info, io.BytesIO(data))
     print(f"wrote {out} ({out.stat().st_size >> 20} MB)")
 
@@ -80,6 +107,14 @@ def make_toolchain(out: Path, llvm: Path, cmake: Path, ninja: Path, sysroot: Pat
             if not (path.exists() or path.is_symlink()):
                 sys.exit(f"error: {program} missing in {llvm / 'bin'}")
             archive.add(path, f"toolchain/llvm/bin/{program}", filter=normalized)
+        wrapper = LD_LLD_WRAPPER.encode()
+        info = normalized(tarfile.TarInfo("toolchain/llvm/bin/ld.lld"))
+        info.size = len(wrapper)
+        info.mode = 0o755
+        archive.addfile(info, io.BytesIO(wrapper))
+        for soname, path in lld_deps(llvm / "bin" / "lld"):
+            archive.add(path, f"toolchain/llvm/lib/lld-deps/{soname}", filter=normalized)
+            print(f"  lld needs {soname}: {path}")
         # clang and clang++ are links to clang-NN in LLVM's release: add the target.
         for target in sorted((llvm / "bin").glob("clang-[0-9]*")):
             archive.add(target, f"toolchain/llvm/bin/{target.name}", filter=normalized)

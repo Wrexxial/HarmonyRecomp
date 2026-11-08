@@ -285,7 +285,8 @@ def detect() -> bool:
                              "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                              "-property", "installationPath"],
                             capture_output=True, text=True, check=False)
-    install = result.stdout.strip().splitlines()[0]
+    lines = result.stdout.strip().splitlines()
+    install = lines[0] if lines else ""
     if not install:
         return False
     # The prebuilt SDK uses STL helpers that only newer toolsets provide

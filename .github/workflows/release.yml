@@ -294,6 +294,20 @@ jobs:
           LIBS=""; for l in $(sed -n 's/^libs //p' "$S/gtk3-flags.txt"); do LIBS="$LIBS -l$l"; done
           clang++ --sysroot="$S" -std=c++23 -fuse-ld=lld $INC t.cpp $LIBS -o t 2>&1 | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
           ./t; echo "sysroot build ok" | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
+          # Again on Arch Linux (like SteamOS: no libxml2.so.2, no dev packages),
+          # with nothing from this Ubuntu: LLVM's lld needs libraries the
+          # toolchain must bring itself (the v0.6.0 Steam Deck install failed so).
+          docker run --rm -v "$PWD:/w" -w /w archlinux:base bash -c '
+            set -e
+            export PATH="/w/toolchain/llvm/bin:/w/toolchain/cmake/bin:/w/toolchain/ninja:/usr/bin"
+            S=/w/toolchain/sysroot
+            INC=""; for d in $(sed -n "s/^includes //p" "$S/gtk3-flags.txt"); do INC="$INC -isystem $S$d"; done
+            clang++ --sysroot="$S" -std=c++23 -fuse-ld=lld $INC -c t.cpp -o t.o
+            clang++ --sysroot="$S" -fuse-ld=lld -shared -fPIC -x c++ /dev/null -o t.so
+            printf "int main(){return 0;}\n" > m.cpp
+            clang++ --sysroot="$S" -fuse-ld=lld m.cpp -o m && ./m
+            cmake --version | head -1' 2>&1 | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
+          echo "arch linux toolchain ok" | tee -a "$RUNNER_TEMP/logs/smoke-linux.log"
           bash -n ../dist-linux/harmonyrecomp-install.sh
 
       - uses: actions/upload-artifact@v4
