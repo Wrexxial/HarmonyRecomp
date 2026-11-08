@@ -8,7 +8,13 @@
 // the "fadds f0,f0,f27" (f27 = 1.0) that adds the frame: the hook adds the
 // frame's time in 60 FPS frames instead (f28 = the frame time in seconds).
 
+#include <rex/cvar.h>
+#include <rex/logging.h>
 #include <rex/ppc/context.h>
+
+REXCVAR_DEFINE_BOOL(fix_frame_counters, true, "HarmonyRecomp",
+                    "Enemy logic that counts frames uses the frame time instead (same behaviour "
+                    "above 60 FPS); false = the original per-frame counting, for comparison");
 
 // Amalaric Sniper (enemy "amala", update sub_822EE1F8): the counter at
 // +0xF7F8 counts how long the player has been in its sight before it draws
@@ -16,5 +22,12 @@
 // (0x822EFCE8, 0x822F0384: 5 degrees per frame). At 144 FPS it reacted and
 // aimed 2.4 times as fast.
 void HarmonyFrameStep(PPCRegister& f0, PPCRegister& f28) {
+  if (!REXCVAR_GET(fix_frame_counters)) return;
+  static int logged = 0;
+  if (logged < 5) {
+    ++logged;
+    REXLOG_INFO("[fps-fix] frame step: counter {} + {} (frame time {} s)", f0.f64, f28.f64 * 60.0,
+                f28.f64);
+  }
   f0.f64 += f28.f64 * 60.0 - 1.0;
 }
