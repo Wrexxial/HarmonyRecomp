@@ -84,14 +84,19 @@ fetch() {
     cp "$HERE/$name" "$CACHE/$name"
     return
   fi
-  if [ -f "$CACHE/$name" ] && [ "$(cat "$CACHE/$name.ok" 2>/dev/null)" = "$TAG" ] && [ "$TAG" != "latest" ]; then
+  # Reused only if it is the same file as on the release now: a file of a
+  # release can be replaced with a fixed one (same tag), which changes where
+  # GitHub redirects the download to.
+  local id
+  id="$(curl -fsI -o /dev/null -w '%{redirect_url}' "$BASE/$name" 2>/dev/null | sed 's/[?].*//')"
+  if [ -f "$CACHE/$name" ] && [ -n "$id" ] && [ "$(cat "$CACHE/$name.ok" 2>/dev/null)" = "$TAG $id" ]; then
     echo "already downloaded: $name"
     return
   fi
   say "Downloading $name"
   curl -fL --retry 3 -o "$CACHE/$name.part" "$BASE/$name" || fail "download of $name failed"
   mv "$CACHE/$name.part" "$CACHE/$name"
-  echo "$TAG" > "$CACHE/$name.ok"
+  echo "$TAG $id" > "$CACHE/$name.ok"
 }
 fetch harmonyrecomp-linux-package.tar.gz
 fetch harmonyrecomp-linux-toolchain.tar.xz
