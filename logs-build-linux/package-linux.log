@@ -1,0 +1,7 @@
+wrote dist-linux/harmonyrecomp-linux-package.tar.gz (18 MB)
+  lld needs libxml2.so.2: /usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14
+  lld needs libicuuc.so.74: /usr/lib/x86_64-linux-gnu/libicuuc.so.74.2
+  lld needs liblzma.so.5: /usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5
+  lld needs libicudata.so.74: /usr/lib/x86_64-linux-gnu/libicudata.so.74.2
+wrote dist-linux/harmonyrecomp-linux-toolchain.tar.xz (167 MB)
+wrote dist-linux/harmonyrecomp-install.sh

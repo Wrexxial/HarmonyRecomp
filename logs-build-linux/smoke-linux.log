@@ -1,0 +1,19 @@
+clang version 20.1.8 (https://github.com/llvm/llvm-project 87f0227cb60147a26a1eeb4fb06e3b505e9c7261)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/runner/work/HarmonyRecomp/HarmonyRecomp/smoke/toolchain/llvm/bin
+sysroot build ok
+Unable to find image 'archlinux:base' locally
+base: Pulling from library/archlinux
+3f244b8f0c18: Pulling fs layer
+432d78c9edb7: Pulling fs layer
+432d78c9edb7: Verifying Checksum
+432d78c9edb7: Download complete
+3f244b8f0c18: Download complete
+3f244b8f0c18: Pull complete
+432d78c9edb7: Pull complete
+Digest: sha256:b1c2fe6e717bfd5673af8fc217e1e1c3ce0dcbb1d53c3414c8425e7ce79fc6d9
+Status: Downloaded newer image for archlinux:base
+clang++: warning: argument unused during compilation: '-fuse-ld=lld' [-Wunused-command-line-argument]
+cmake version 3.31.6
+arch linux toolchain ok

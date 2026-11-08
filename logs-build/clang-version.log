@@ -1,0 +1,4 @@
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: D:\a\_temp\llvm\bin

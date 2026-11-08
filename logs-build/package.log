@@ -1,0 +1,15 @@
+  sdk: 1159 files
+  sdk/bin: C++ runtime msvcp140.dll, msvcp140_1.dll, msvcp140_2.dll, msvcp140_atomic_wait.dll, msvcp140_codecvt_ids.dll, vcruntime140.dll, vcruntime140_1.dll, concrt140.dll
+  src: 75 tracked files (without images)
+  python: embeddable distribution
+wrote dist\harmonyrecomp-package.zip (24 MB)
+  llvm: clang, clang++, lld-link, llvm-rc, llvm-ar, llvm-lib, llvm-ranlib, llvm-mt, llvm-nm, llvm-objcopy
+  llvm/lib/clang: 295 files
+  cmake: 3776 files
+wrote dist\harmonyrecomp-toolchain.zip (140 MB)
+total 168556
+drwxr-xr-x 1 runneradmin 197121         0 Nov  8 20:04 .
+drwxr-xr-x 1 runneradmin 197121         0 Nov  8 20:03 ..
+-rwxr-xr-x 1 runneradmin 197121     50176 Nov  8 20:04 HarmonyRecomp-Setup.exe
+-rw-r--r-- 1 runneradmin 197121  25339248 Nov  8 20:03 harmonyrecomp-package.zip
+-rw-r--r-- 1 runneradmin 197121 147199338 Nov  8 20:03 harmonyrecomp-toolchain.zip
