@@ -19,7 +19,7 @@ REXCVAR_DEFINE_BOOL(fix_frame_counters, true, "HarmonyRecomp",
 // Amalaric Sniper (enemy "amala", update sub_822EE1F8): the counter at
 // +0xF7F8 counts how long the player has been in its sight before it draws
 // the bow (0x822EE824), and then turns the bow towards the player
-// (0x822EFCE8, 0x822F0384: 5 degrees per frame). At 144 FPS it reacted and
+// (0x822EFCE8, 0x822F0384, 0x822F0898: 5 degrees per frame). At 144 FPS it reacted and
 // aimed 2.4 times as fast.
 void HarmonyFrameStep(PPCRegister& f0, PPCRegister& f28) {
   if (!REXCVAR_GET(fix_frame_counters)) return;

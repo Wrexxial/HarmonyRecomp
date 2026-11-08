@@ -147,3 +147,10 @@ registers = ["f0", "f28"]
 address = 0x822F0384
 name = "HarmonyFrameStep"
 registers = ["f0", "f28"]
+
+# Amalaric Sniper: third bow-turn variant ("fadds f13,f0,f27": the hook
+# changes f0, which is loaded again right after).
+[[midasm_hook]]
+address = 0x822F0898
+name = "HarmonyFrameStep"
+registers = ["f0", "f28"]
