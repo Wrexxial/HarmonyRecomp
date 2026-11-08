@@ -22,7 +22,7 @@ Questions, help and news: **[Discord server](https://discord.gg/PEYdJ72aH)**
 
 - Runs the full game natively on Windows and on Linux / Steam Deck: all stages and characters of the base game
 - Settings menu (F6), usable with a controller:
-  - Graphics: resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (60/90/120/144/unlocked), borderless fullscreen (F11), aspect ratio (16:10, 21:9, 32:9, Steam Deck 1280x800; experimental)
+  - Graphics: resolution scale, anti-aliasing, anisotropic filtering, frame rate limit (30/60/90/120/144/unlocked), borderless fullscreen (F11), aspect ratio (16:10, 21:9, 32:9, Steam Deck 1280x800; experimental)
   - Controls: controller button remapping, keyboard/mouse key bindings
   - Online: co-op on/off, room codes, ping per player
   - Saves: open the save folder, one-click backup
@@ -112,6 +112,7 @@ Settings live in `harmonyrecomp.toml` next to the exe (copied there on the first
 | F4 | All SDK runtime settings |
 | F6 | Settings menu: graphics, controls, online, saves ("Save" writes `harmonyrecomp.toml`); its title shows your HarmonyRecomp version |
 | F11 | Borderless fullscreen on/off (remembered, like the window size) |
+| F7 | Frame rate limit 30 / 60 FPS (for speedruns: glitches that need the console's frame drops) |
 | `^` | Log console |
 
 ### Controls
@@ -232,7 +233,7 @@ Tested with 12 DLC packages: the DLC characters and the Dracula's Castle, Legion
 
 - Text input in system dialogs (e.g. naming something) still needs a keyboard.
 - Other aspect ratios are experimental: the HUD and menus keep their shape and stay in the middle 16:9 area, and the title picture is cut at the top and bottom on ultrawide screens.
-- Above 60 FPS a few enemies may still act faster than intended (logic that counts frames). The Amalaric Sniper is fixed; please report others with their name.
+- Above 60 FPS a few enemies may still act faster than intended (logic that counts frames), e.g. Ectoplasm and Frozen Shade projectiles. The Amalaric Sniper is fixed; please report others with their name.
 
 ## Planned
 

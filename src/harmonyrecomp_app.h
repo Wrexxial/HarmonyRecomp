@@ -14,6 +14,7 @@
 
 #include <toml++/toml.hpp>
 
+#include <rex/cvar.h>
 #include <rex/filesystem.h>
 #include <rex/graphics/command_processor.h>
 #include <rex/graphics/graphics_system.h>
@@ -153,6 +154,14 @@ class HarmonyrecompApp : public rex::ReXApp {
     rex::ui::RegisterBind("bind_fullscreen", "F11", "Toggle fullscreen", [this] {
       if (auto* w = window()) w->SetFullscreen(!w->IsFullscreen());
     });
+    // 30/60 FPS for speedruns (glitches that need the console's frame drops).
+    rex::ui::RegisterBind("bind_fps_30_60", "F7", "Switch frame rate limit 30/60", [] {
+      const bool at_30 =
+          rex::cvar::GetFlagByName("vsync") == "true" && rex::cvar::GetFlagByName("vsync_rate") == "30";
+      rex::cvar::SetFlagByName("vsync", "true");
+      rex::cvar::SetFlagByName("vsync_rate", at_30 ? "60" : "30");
+      harmony::notice::Post(at_30 ? "Frame rate limit: 60 FPS" : "Frame rate limit: 30 FPS", 3.0);
+    });
     if (harmony::ShowFps()) {
       SetFpsCounter(true);
     }
@@ -167,6 +176,7 @@ class HarmonyrecompApp : public rex::ReXApp {
     rex::ui::UnregisterBind("bind_graphics_menu");
     rex::ui::UnregisterBind("bind_fps_counter");
     rex::ui::UnregisterBind("bind_fullscreen");
+    rex::ui::UnregisterBind("bind_fps_30_60");
     graphics_menu_.reset();
     fps_counter_.reset();
     harmony::notice::Shutdown();

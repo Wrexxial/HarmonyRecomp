@@ -310,13 +310,15 @@ void GraphicsMenuDialog::DrawGraphics() {
   {
     const std::string rate = Get("vsync_rate");
     const char* current = !vsync                       ? "Unlocked"
+                          : rate == "30"                  ? "30 FPS"
                           : (rate == "0" || rate == "60") ? "60 FPS"
                           : rate == "90"                  ? "90 FPS"
                           : rate == "120"                 ? "120 FPS"
                           : rate == "144"                 ? "144 FPS"
                                                           : "Custom";
     constexpr Choice kRates[] = {
-        {"60 FPS", "60"}, {"90 FPS", "90"}, {"120 FPS", "120"}, {"144 FPS", "144"}, {"Unlocked", ""},
+        {"30 FPS", "30"},   {"60 FPS", "60"},   {"90 FPS", "90"},
+        {"120 FPS", "120"}, {"144 FPS", "144"}, {"Unlocked", ""},
     };
     if (ImGui::BeginCombo("Frame rate limit", current)) {
       for (const auto& choice : kRates) {
@@ -336,7 +338,9 @@ void GraphicsMenuDialog::DrawGraphics() {
     }
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip("60 FPS is the Xbox 360's rate. Higher limits are smoother on fast\n"
-                        "monitors; the game speed stays the same. Unlocked: as fast as possible.");
+                        "monitors; the game speed stays the same, but a few enemies still act\n"
+                        "faster above 60. 30 FPS (F7 switches 30/60): for speedruns, glitches\n"
+                        "that need a lower frame rate. Unlocked: as fast as possible.");
     }
   }
   bool fps = ShowFps();
