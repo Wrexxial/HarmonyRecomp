@@ -152,3 +152,27 @@ registers = ["f0", "f28"]
 address = 0x822F0898
 name = "HarmonyFrameStep"
 registers = ["f0", "f28"]
+
+# Amalaric Sniper: random decisions rolled every frame in state 4 (see
+# src/framerate_fixes.cpp). HarmonySniperFrame counts ~60 ticks a second per
+# sniper; the roll hooks run right after the random call and turn the result
+# into "no" on frames without a tick.
+[[midasm_hook]]
+address = 0x822EE21C
+name = "HarmonySniperFrame"
+registers = ["r31", "f1"]
+
+[[midasm_hook]]
+address = 0x822EF9D8
+name = "HarmonySniperRollInt"
+registers = ["r3", "r31"]
+
+[[midasm_hook]]
+address = 0x822EFA4C
+name = "HarmonySniperRollInt"
+registers = ["r3", "r31"]
+
+[[midasm_hook]]
+address = 0x822EFAFC
+name = "HarmonySniperRollFloat"
+registers = ["f1", "r31"]
