@@ -176,3 +176,11 @@ registers = ["r3", "r31"]
 address = 0x822EFAFC
 name = "HarmonySniperRollFloat"
 registers = ["f1", "r31"]
+
+# Amalaric Sniper: following the player in state 4 moved a fixed step per
+# frame; the hook (before "bl 0x822FD040", v1 = the speed) scales it by the
+# frame time x 60 (src/framerate_fixes.cpp).
+[[midasm_hook]]
+address = 0x822EF944
+name = "HarmonySniperFollowSpeed"
+registers = ["v1", "f28"]

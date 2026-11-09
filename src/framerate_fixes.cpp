@@ -82,3 +82,14 @@ void HarmonySniperRollFloat(PPCRegister& f1, PPCRegister& r31) {
   if (!REXCVAR_GET(fix_frame_counters) || SniperTicks(r31.u32)) return;
   f1.f64 = 1.0e30;
 }
+
+// Amalaric Sniper, state 4: it moves towards its spot above the player by
+// "position + direction x speed" every frame (0x822EF944; speed 0.6, or
+// 0.006 x distance when close) without the frame time, so at 220 FPS it
+// followed the player 3.7 times as fast. Its other moves (states 6/7) already
+// multiply by frame time x 60; this one now does too.
+void HarmonySniperFollowSpeed(PPCVRegister& v1, PPCRegister& f28) {
+  if (!REXCVAR_GET(fix_frame_counters)) return;
+  const float scale = float(f28.f64 * 60.0);
+  for (float& value : v1.f32) value *= scale;
+}
