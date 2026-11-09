@@ -49,14 +49,29 @@ have curl || fail "curl is needed."
 have tar || fail "tar is needed."
 
 # --- What to build from ------------------------------------------------------
-if [ -z "$GAME" ]; then
-  if gui; then
-    GAME="$(zenity --file-selection --title='Your Harmony of Despair game file (58410A7A/000D0000/...)' 2>/dev/null)" || exit 1
-  else
-    read -r -p "Path of your game file (from 58410A7A/000D0000): " GAME
+# The game file is an Xbox 360 package: it starts with "LIVE" or "PIRS" and is
+# named like a long hex number, from 58410A7A/000D0000/ on the Xbox drive.
+is_package() { [ -f "$1" ] && case "$(head -c 4 "$1" 2>/dev/null)" in LIVE|PIRS) true ;; *) false ;; esac; }
+GAME_HELP="The game file is the Xbox 360 package from 58410A7A/000D0000/: one file with a long hex name and no extension (not a file from this download)."
+while :; do
+  if [ -z "$GAME" ]; then
+    if gui; then
+      GAME="$(zenity --file-selection --title='Your Harmony of Despair game file (58410A7A/000D0000/...)' 2>/dev/null)" || exit 1
+    else
+      read -r -p "Path of your game file (from 58410A7A/000D0000): " GAME
+    fi
   fi
-fi
-[ -f "$GAME" ] || fail "game file not found: $GAME"
+  is_package "$GAME" && break
+  if [ ! -f "$GAME" ]; then msg="Game file not found: $GAME"; else msg="$GAME is not an Xbox 360 game package."; fi
+  echo "$msg" >&2
+  echo "$GAME_HELP" >&2
+  if gui; then
+    zenity --question --title="HarmonyRecomp" --text="$msg\n\n$GAME_HELP\n\nPick another file?" 2>/dev/null || exit 1
+  elif [ ! -t 0 ]; then
+    exit 1
+  fi
+  GAME=""
+done
 if [ -z "$DLC_DIR" ]; then
   if gui; then
     if zenity --question --title="HarmonyRecomp" --text="Do you have DLC (and the title update) to include?" 2>/dev/null; then
