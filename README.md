@@ -43,6 +43,8 @@ If the game runs at 30 FPS or stutters, check that no frame rate limit is set fo
 
 If the setup stops with "the rexglue tool could not start", install the latest [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) and run it again.
 
+The game needs a processor with AVX2 (Intel Core 4th generation / 2013 or newer, AMD Ryzen or newer) and a graphics card with Direct3D 12 (Windows) or Vulkan (Linux).
+
 Nothing of the game is downloaded: everything is built from your own copy on your own PC.
 
 **Updating:** the game tells you at startup when a newer release is out (it asks GitHub once; `check_for_updates = false` switches that off). Download the newest `HarmonyRecomp-Setup.exe` and run it with the same install folder; your settings and saves are kept. (Setups before v0.3.3 could reuse an old download: if an update to v0.3.3 or newer seems to change nothing, delete the `.setup` folder in the install folder and run it again.) If something fails, the setup shows the log (`setup.log` in the install folder); please attach it to an issue.
@@ -67,7 +69,7 @@ The rest of this page is for building by hand and for developers.
 
 ## Requirements
 
-- Windows 10/11, x86-64
+- Windows 10/11, x86-64, a CPU with AVX2 (Intel Core 4th generation / 2013 or newer, AMD Ryzen or newer; many Pentium and Celeron chips lack it)
 - Your own XBLA package of the game (the file without extension in `58410A7A/000D0000/`, it starts with `LIVE`)
 - Build tools, e.g. with [Scoop](https://scoop.sh) in PowerShell:
 

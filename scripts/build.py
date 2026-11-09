@@ -2547,13 +2547,44 @@ START_FAILURES = {
 }
 
 
+CPU_TOO_OLD = ("your processor is too old: HarmonyRecomp needs a CPU with AVX2 (Intel Core "
+               "4th generation / 2013 or newer, AMD Ryzen or newer; many Pentium and Celeron "
+               "chips lack it)")
+
+
+def cpu_has_avx2() -> bool | None:
+    """Whether the CPU has AVX2 (the SDK is built for x86-64-v3); None if unknown."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            # PF_AVX2_INSTRUCTIONS_AVAILABLE (40), Windows 10 and newer.
+            return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(40))
+        flags = Path("/proc/cpuinfo").read_text(errors="replace")
+        if "flags" in flags:
+            return " avx2" in flags and " bmi2" in flags
+    except Exception:
+        pass
+    return None
+
+
+def check_cpu() -> None:
+    if platform.machine().lower() in ("amd64", "x86_64") and cpu_has_avx2() is False:
+        sys.exit(f"error: {CPU_TOO_OLD}.")
+
+
 def codegen_failed(code: int) -> None:
     status = code & 0xFFFFFFFF
+    # Illegal instruction (Windows 0xC000001D; Linux SIGILL), or a DLL whose
+    # initialization hit one (0xC0000142): the CPU lacks AVX2/BMI2.
+    if status == 0xC000001D or code == -4 or (status == 0xC0000142 and cpu_has_avx2() is False):
+        sys.exit(f"error: the rexglue tool could not run: {CPU_TOO_OLD}.")
     if status in START_FAILURES:
         sys.exit(f"error: the rexglue tool could not start ({START_FAILURES[status]}, "
-                 f"0x{status:08X}). Usually the Microsoft Visual C++ Redistributable is missing "
-                 "or old: install the latest x64 version from "
-                 "https://aka.ms/vs/17/release/vc_redist.x64.exe and run the build again.")
+                 f"0x{status:08X}). Restart the PC and run the setup again; if your antivirus "
+                 "has a behaviour shield, add an exception for the install folder. If it still "
+                 "fails, install the latest Microsoft Visual C++ Redistributable (x64) from "
+                 "https://aka.ms/vs/17/release/vc_redist.x64.exe. Windows' Event Viewer "
+                 "(Application, \"Application Error\" for rexglue.exe) names the failing DLL.")
     sys.exit(f"error: codegen failed with exit code {code}")
 
 
@@ -2570,6 +2601,7 @@ def dlc_package_of_module(name: str) -> str | None:
 
 
 def step_codegen(tool: Path, force: bool, dlc_dir: Path | None, game: Path | None) -> None:
+    check_cpu()
     done = (ROOT / "generated" / "default" / "sources.cmake").exists()
     current = codegen_inputs_hash()
     up_to_date = (done and CODEGEN_STAMP.exists()
